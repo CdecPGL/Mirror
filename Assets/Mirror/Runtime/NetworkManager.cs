@@ -18,7 +18,7 @@ namespace Mirror
     {
         public class AsyncOperationWrapper 
             {
-            public event Action<AsyncOperation> completed = (AsyncOperation handler) => { };
+            public event System.Action<AsyncOperation> completed = (AsyncOperation handler) => { };
 
             public bool allowSceneActivation
                 {
