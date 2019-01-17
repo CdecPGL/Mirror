@@ -16,6 +16,70 @@ namespace Mirror
     [AddComponentMenu("Network/NetworkManager")]
     public class NetworkManager : MonoBehaviour
     {
+        public class AsyncOperationWrapper 
+            {
+            public event Action<AsyncOperation> completed = (AsyncOperation handler) => { };
+
+            public bool allowSceneActivation
+                {
+                get {
+                    return m_AsyncOperationInstance == null ? false : m_AsyncOperationInstance.allowSceneActivation;
+                }
+                set {
+                    if (m_AsyncOperationInstance != null) {
+                        m_AsyncOperationInstance.allowSceneActivation = value;
+                    }
+                    else {
+                        Debug.LogError("Try to change propaty of AsyncOperationWrapper before set AsyncOperation instance.");
+                    }
+                }
+            }
+
+            public bool isDone 
+                {
+                get {
+                    return m_AsyncOperationInstance == null ? false : m_AsyncOperationInstance.isDone;
+                }
+            }
+
+            public float progress
+                {
+                get {
+                    return m_AsyncOperationInstance == null ? 0 : m_AsyncOperationInstance.progress;
+                }
+            }
+
+            public int priority
+                {
+                get {
+                    return m_AsyncOperationInstance == null ? 0 : m_AsyncOperationInstance.priority;
+                }
+                set {
+                    if (m_AsyncOperationInstance != null) {
+                        m_AsyncOperationInstance.priority = value;
+                    }
+                    else {
+                        Debug.LogError("Try to change propaty of AsyncOperationWrapper before set AsyncOperation instance.");
+                    }
+                }
+            }
+
+            public AsyncOperationWrapper() { }
+
+            public AsyncOperationWrapper(AsyncOperation async_op) 
+                {
+                SetAsyncOperationInstance(async_op);
+            }
+
+            public void SetAsyncOperationInstance(AsyncOperation async_op)
+                {
+                m_AsyncOperationInstance = async_op;
+                m_AsyncOperationInstance.completed += (AsyncOperation handler) => { completed(handler); };
+            }
+
+            private AsyncOperation m_AsyncOperationInstance = null;
+        }
+
         // configuration
         [FormerlySerializedAs("m_NetworkPort")] public ushort networkPort = 7777;
         [FormerlySerializedAs("m_ServerBindToIP")] public bool serverBindToIP;
@@ -48,7 +112,7 @@ namespace Mirror
 
         public static NetworkManager singleton;
 
-        static AsyncOperation s_LoadingSceneAsync;
+        static AsyncOperationWrapper s_LoadingSceneAsync;
         static NetworkConnection s_ClientReadyConnection;
 
         // this is used to persist network address between scenes.
@@ -345,13 +409,17 @@ namespace Mirror
             NetworkServer.SetAllClientsNotReady();
             networkSceneName = newSceneName;
 
-            s_LoadingSceneAsync = SceneManager.LoadSceneAsync(newSceneName);
+            s_LoadingSceneAsync = LoadSceneAsync(newSceneName);
 
             StringMessage msg = new StringMessage(networkSceneName);
             NetworkServer.SendToAll((short)MsgType.Scene, msg);
 
             s_StartPositionIndex = 0;
             startPositions.Clear();
+        }
+
+        protected virtual AsyncOperationWrapper LoadSceneAsync(string newSceneName) {
+            return new AsyncOperationWrapper(SceneManager.LoadSceneAsync(newSceneName));
         }
 
         void CleanupNetworkIdentities()
@@ -390,7 +458,7 @@ namespace Mirror
                 NetworkClient.pauseMessageHandling = true;
             }
 
-            s_LoadingSceneAsync = SceneManager.LoadSceneAsync(newSceneName);
+            s_LoadingSceneAsync = LoadSceneAsync(newSceneName);
             networkSceneName = newSceneName;
         }
 
