@@ -7,7 +7,7 @@ using UnityEngine.Networking.Types;
 namespace Mirror
 {
     [Obsolete("LLAPI is obsolete and will be removed from future versions of Unity")]
-    public class LLAPITransport : MonoBehaviour, ITransport
+    public class LLAPITransport : Transport
     {
         public ushort port = 7777;
 
@@ -82,12 +82,12 @@ namespace Mirror
         }
 
         // client //////////////////////////////////////////////////////////////
-        public bool ClientConnected()
+        public override bool ClientConnected()
         {
             return clientConnectionId != -1;
         }
 
-        public void ClientConnect(string address)
+        public override void ClientConnect(string address)
         {
             HostTopology hostTopology = new HostTopology(connectionConfig, 1);
 
@@ -105,15 +105,13 @@ namespace Mirror
             }
         }
 
-        public bool ClientSend(int channelId, byte[] data)
+        public override bool ClientSend(int channelId, byte[] data)
         {
             return NetworkTransport.Send(clientId, clientConnectionId, channelId, data, data.Length, out error);
         }
 
-        public bool ClientGetNextMessage(out TransportEvent transportEvent, out byte[] data)
+        public bool ProcessClientMessage()
         {
-            transportEvent = TransportEvent.Disconnected;
-            data = null;
             int connectionId;
             int channel;
             int receivedSize;
@@ -128,21 +126,23 @@ namespace Mirror
             NetworkError networkError = (NetworkError)error;
             if (networkError != NetworkError.Ok)
             {
-                Debug.Log("NetworkTransport.Receive failed: hostid=" + clientId + " connId=" + connectionId + " channelId=" + channel + " error=" + networkError);
+                string message = "NetworkTransport.Receive failed: hostid=" + clientId + " connId=" + connectionId + " channelId=" + channel + " error=" + networkError;
+                OnClientError.Invoke(new Exception(message));
             }
 
+            // raise events
             switch (networkEvent)
             {
                 case NetworkEventType.ConnectEvent:
-                    transportEvent = TransportEvent.Connected;
+                    OnClientConnected.Invoke();
                     break;
                 case NetworkEventType.DataEvent:
-                    transportEvent = TransportEvent.Data;
-                    data = new byte[receivedSize];
+                    byte [] data = new byte[receivedSize];
                     Array.Copy(clientReceiveBuffer, data, receivedSize);
+                    OnClientDataReceived.Invoke(data);
                     break;
                 case NetworkEventType.DisconnectEvent:
-                    transportEvent = TransportEvent.Disconnected;
+                    OnClientDisconnected.Invoke();
                     break;
                 default:
                     return false;
@@ -151,7 +151,14 @@ namespace Mirror
             return true;
         }
 
-        public void ClientDisconnect()
+        public void Update()
+        {
+            // process all messages
+            while (ProcessClientMessage()) { }
+            while (ProcessServerMessage()) { }
+        }
+
+        public override void ClientDisconnect()
         {
             if (clientId != -1)
             {
@@ -161,12 +168,12 @@ namespace Mirror
         }
 
         // server //////////////////////////////////////////////////////////////
-        public bool ServerActive()
+        public override bool ServerActive()
         {
             return serverHostId != -1;
         }
 
-        public void ServerStart()
+        public override void ServerStart()
         {
             if (useWebsockets)
             {
@@ -182,16 +189,14 @@ namespace Mirror
             }
         }
 
-        public bool ServerSend(int connectionId, int channelId, byte[] data)
+        public override bool ServerSend(int connectionId, int channelId, byte[] data)
         {
             return NetworkTransport.Send(serverHostId, connectionId, channelId, data, data.Length, out error);
         }
 
-        public bool ServerGetNextMessage(out int connectionId, out TransportEvent transportEvent, out byte[] data)
+        public bool ProcessServerMessage()
         {
-            connectionId = -1;
-            transportEvent = TransportEvent.Disconnected;
-            data = null;
+            int connectionId = -1;
             int channel;
             int receivedSize;
             NetworkEventType networkEvent = NetworkTransport.ReceiveFromHost(serverHostId, out connectionId, out channel, serverReceiveBuffer, serverReceiveBuffer.Length, out receivedSize, out error);
@@ -205,7 +210,10 @@ namespace Mirror
             NetworkError networkError = (NetworkError)error;
             if (networkError != NetworkError.Ok)
             {
-                Debug.Log("NetworkTransport.Receive failed: hostid=" + serverHostId + " connId=" + connectionId + " channelId=" + channel + " error=" + networkError);
+                string message = "NetworkTransport.Receive failed: hostid=" + serverHostId + " connId=" + connectionId + " channelId=" + channel + " error=" + networkError;
+
+                // TODO write a TransportException or better
+                OnServerError.Invoke(connectionId, new Exception(message));
             }
 
             // LLAPI client sends keep alive messages (75-6C-6C) on channel=110.
@@ -218,15 +226,15 @@ namespace Mirror
             switch (networkEvent)
             {
                 case NetworkEventType.ConnectEvent:
-                    transportEvent = TransportEvent.Connected;
+                    OnServerConnected.Invoke(connectionId);
                     break;
                 case NetworkEventType.DataEvent:
-                    transportEvent = TransportEvent.Data;
-                    data = new byte[receivedSize];
+                    byte[] data = new byte[receivedSize];
                     Array.Copy(serverReceiveBuffer, data, receivedSize);
+                    OnServerDataReceived.Invoke(connectionId, data);
                     break;
                 case NetworkEventType.DisconnectEvent:
-                    transportEvent = TransportEvent.Disconnected;
+                    OnServerDisconnected.Invoke(connectionId);
                     break;
                 default:
                     // nothing or a message we don't recognize
@@ -236,12 +244,12 @@ namespace Mirror
             return true;
         }
 
-        public bool ServerDisconnect(int connectionId)
+        public override bool ServerDisconnect(int connectionId)
         {
             return NetworkTransport.Disconnect(serverHostId, connectionId, out error);
         }
 
-        public bool GetConnectionInfo(int connectionId, out string address)
+        public override bool GetConnectionInfo(int connectionId, out string address)
         {
             int port;
             NetworkID networkId;
@@ -250,7 +258,7 @@ namespace Mirror
             return true;
         }
 
-        public void ServerStop()
+        public override void ServerStop()
         {
             NetworkTransport.RemoveHost(serverHostId);
             serverHostId = -1;
@@ -258,7 +266,7 @@ namespace Mirror
         }
 
         // common //////////////////////////////////////////////////////////////
-        public void Shutdown()
+        public override void Shutdown()
         {
             NetworkTransport.Shutdown();
             serverHostId = -1;
@@ -266,7 +274,7 @@ namespace Mirror
             Debug.Log("LLAPITransport.Shutdown");
         }
 
-        public int GetMaxPacketSize(int channelId)
+        public override int GetMaxPacketSize(int channelId)
         {
             return globalConfig.MaxPacketSize;
         }

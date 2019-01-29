@@ -2,8 +2,10 @@ using System.Collections.Generic;
 using System.Net;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 using UnityEngine.Serialization;
+using System;
 
 namespace Mirror
 {
@@ -14,7 +16,6 @@ namespace Mirror
     }
 
     [AddComponentMenu("Network/NetworkManager")]
-    [RequireComponent(typeof(ITransport))]
     public class NetworkManager : MonoBehaviour
     {
         public class AsyncOperationWrapper 
@@ -97,20 +98,34 @@ namespace Mirror
         }
 
         // configuration
-        [FormerlySerializedAs("m_NetworkAddress")] public string networkAddress = "localhost";
         [FormerlySerializedAs("m_DontDestroyOnLoad")] public bool dontDestroyOnLoad = true;
         [FormerlySerializedAs("m_RunInBackground")] public bool runInBackground = true;
+        public bool startOnHeadless = true;
         [FormerlySerializedAs("m_ShowDebugMessages")] public bool showDebugMessages;
+
+        [Scene]
+        [FormerlySerializedAs("m_OfflineScene")] public string offlineScene = "";
+
+        [Scene]
+        [FormerlySerializedAs("m_OnlineScene")] public string onlineScene = "";
+
+        [Header("Network Info")]
+        // transport layer
+        public Transport transport;
+        [FormerlySerializedAs("m_NetworkAddress")] public string networkAddress = "localhost";
+        [FormerlySerializedAs("m_MaxConnections")] public int maxConnections = 4;
+
+        [Header("Spawn Info")]
         [FormerlySerializedAs("m_PlayerPrefab")] public GameObject playerPrefab;
         [FormerlySerializedAs("m_AutoCreatePlayer")] public bool autoCreatePlayer = true;
         [FormerlySerializedAs("m_PlayerSpawnMethod")] public PlayerSpawnMethod playerSpawnMethod;
-        [FormerlySerializedAs("m_OfflineScene")] public string offlineScene = "";
-        [FormerlySerializedAs("m_OnlineScene")] public string onlineScene = "";
-        [FormerlySerializedAs("m_MaxConnections")] public int maxConnections = 4;
-        [FormerlySerializedAs("m_SpawnPrefabs")] public List<GameObject> spawnPrefabs = new List<GameObject>();
+
+        [FormerlySerializedAs("m_SpawnPrefabs"),HideInInspector]
+        public List<GameObject> spawnPrefabs = new List<GameObject>();
 
         public static List<Transform> startPositions = new List<Transform>();
 
+        [NonSerialized]
         public bool clientLoadedScene;
 
         // only really valid on the server
@@ -118,6 +133,7 @@ namespace Mirror
 
         // runtime data
         public static string networkSceneName = ""; // this is used to make sure that all scene changes are initialized by UNET. loading a scene manually wont set networkSceneName, so UNET would still load it again on start.
+        [NonSerialized]
         public bool isNetworkActive;
         public NetworkClient client;
         static int s_StartPositionIndex;
@@ -140,6 +156,12 @@ namespace Mirror
             networkSceneName = offlineScene;
 
             InitializeSingleton();
+
+            // headless mode? then start the server
+            if (SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null && startOnHeadless)
+            {
+                StartServer();
+            }
         }
 
         void InitializeSingleton()
@@ -212,8 +234,16 @@ namespace Mirror
             // add transport if there is none yet. makes upgrading easier.
             if (transport == null)
             {
-                gameObject.AddComponent<TelepathyTransport>();
-                Debug.Log("NetworkManager: added default Transport because there was none yet.");
+                // was a transport added yet? if not, add one
+                transport = GetComponent<Transport>();
+                if (transport == null)
+                {
+                    transport = gameObject.AddComponent<TelepathyTransport>();
+                    Debug.Log("NetworkManager: added default Transport because there was none yet.");
+                }
+#if UNITY_EDITOR
+                UnityEditor.EditorUtility.SetDirty(gameObject);
+#endif
             }
 
             maxConnections = Mathf.Max(maxConnections, 0); // always >= 0
@@ -448,12 +478,12 @@ namespace Mirror
             }
 
             // vis2k: pause message handling while loading scene. otherwise we will process messages and then lose all
-            // the sate as soon as the load is finishing, causing all kinds of bugs because of missing state.
+            // the state as soon as the load is finishing, causing all kinds of bugs because of missing state.
             // (client may be null after StopClient etc.)
             if (client != null)
             {
                 if (LogFilter.Debug) { Debug.Log("ClientChangeScene: pausing handlers while scene is loading to avoid data loss after scene was loaded."); }
-                NetworkClient.pauseMessageHandling = true;
+                NetworkManager.singleton.transport.enabled = false;
             }
 
             s_LoadingSceneAsync = LoadSceneAsync(newSceneName);
@@ -468,7 +498,7 @@ namespace Mirror
             {
                 // process queued messages that we received while loading the scene
                 if (LogFilter.Debug) { Debug.Log("FinishLoadScene: resuming handlers after scene was loading."); }
-                NetworkClient.pauseMessageHandling = false;
+                NetworkManager.singleton.transport.enabled = true;
 
                 if (s_ClientReadyConnection != null)
                 {
@@ -578,8 +608,12 @@ namespace Mirror
 
             if (msg.value != null && msg.value.Length > 0)
             {
-                NetworkReader reader = new NetworkReader(msg.value);
-                OnServerAddPlayer(netMsg.conn, reader);
+                // convert payload to extra message and call OnServerAddPlayer
+                // (usually for character selection information)
+                NetworkMessage extraMessage = new NetworkMessage();
+                extraMessage.reader = new NetworkReader(msg.value);
+                extraMessage.conn = netMsg.conn;
+                OnServerAddPlayer(netMsg.conn, extraMessage);
             }
             else
             {
@@ -689,7 +723,7 @@ namespace Mirror
             NetworkServer.SetClientReady(conn);
         }
 
-        public virtual void OnServerAddPlayer(NetworkConnection conn, NetworkReader extraMessageReader)
+        public virtual void OnServerAddPlayer(NetworkConnection conn, NetworkMessage extraMessage)
         {
             OnServerAddPlayerInternal(conn);
         }
@@ -735,7 +769,7 @@ namespace Mirror
             if (playerSpawnMethod == PlayerSpawnMethod.Random && startPositions.Count > 0)
             {
                 // try to spawn at a random start location
-                int index = Random.Range(0, startPositions.Count);
+                int index = UnityEngine.Random.Range(0, startPositions.Count);
                 return startPositions[index];
             }
             if (playerSpawnMethod == PlayerSpawnMethod.RoundRobin && startPositions.Count > 0)

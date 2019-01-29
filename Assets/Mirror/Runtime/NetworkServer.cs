@@ -53,6 +53,11 @@ namespace Mirror
                     s_ServerHostId = -1;
                 }
 
+                NetworkManager.singleton.transport.OnServerDisconnected.RemoveListener(OnDisconnected);
+                NetworkManager.singleton.transport.OnServerConnected.RemoveListener(OnConnected);
+                NetworkManager.singleton.transport.OnServerDataReceived.RemoveListener(OnDataReceived);
+                NetworkManager.singleton.transport.OnServerError.RemoveListener(OnError);
+
                 s_Initialized = false;
             }
             dontListen = false;
@@ -69,6 +74,11 @@ namespace Mirror
 
             //Make sure connections are cleared in case any old connections references exist from previous sessions
             connections.Clear();
+            NetworkManager.singleton.transport.OnServerDisconnected.AddListener(OnDisconnected);
+            NetworkManager.singleton.transport.OnServerConnected.AddListener(OnConnected);
+            NetworkManager.singleton.transport.OnServerDataReceived.AddListener(OnDataReceived);
+            NetworkManager.singleton.transport.OnServerError.AddListener(OnError);
+
         }
 
         internal static void RegisterMessageHandlers()
@@ -269,38 +279,26 @@ namespace Mirror
             if (s_ServerHostId == -1)
                 return;
 
-            int connectionId;
-            TransportEvent transportEvent;
-            byte[] data;
-            while (NetworkManager.singleton.transport.ServerGetNextMessage(out connectionId, out transportEvent, out data))
-            {
-                switch (transportEvent)
-                {
-                    case TransportEvent.Connected:
-                        //Debug.Log("NetworkServer loop: Connected");
-                        HandleConnect(connectionId, 0);
-                        break;
-                    case TransportEvent.Data:
-                        //Debug.Log("NetworkServer loop: clientId: " + message.connectionId + " Data: " + BitConverter.ToString(message.data));
-                        HandleData(connectionId, data, 0);
-                        break;
-                    case TransportEvent.Disconnected:
-                        //Debug.Log("NetworkServer loop: Disconnected");
-                        HandleDisconnect(connectionId, 0);
-                        break;
-                }
-            }
-
             UpdateServerObjects();
         }
 
-        static void HandleConnect(int connectionId, byte error)
+        static void OnConnected(int connectionId)
         {
             if (LogFilter.Debug) { Debug.Log("Server accepted client:" + connectionId); }
 
-            if (error != 0)
+            // connectionId needs to be > 0 because 0 is reserved for local player
+            if (connectionId <= 0)
             {
-                GenerateConnectError(error);
+                Debug.LogError("Server.HandleConnect: invalid connectionId: " + connectionId + " . Needs to be >0, because 0 is reserved for local player.");
+                NetworkManager.singleton.transport.ServerDisconnect(connectionId);
+                return;
+            }
+
+            // connectionId not in use yet?
+            if (connections.ContainsKey(connectionId))
+            {
+                NetworkManager.singleton.transport.ServerDisconnect(connectionId);
+                if (LogFilter.Debug) { Debug.Log("Server connectionId " + connectionId + " already in use. kicked client:" + connectionId); }
                 return;
             }
 
@@ -309,7 +307,7 @@ namespace Mirror
             //  less code and third party transport might not do that anyway)
             // (this way we could also send a custom 'tooFull' message later,
             //  Transport can't do that)
-            if (connections.Count <= s_MaxConnections)
+            if (connections.Count < s_MaxConnections)
             {
                 // get ip address from connection
                 string address;
@@ -334,7 +332,7 @@ namespace Mirror
             conn.InvokeHandlerNoData((short)MsgType.Connect);
         }
 
-        static void HandleDisconnect(int connectionId, byte error)
+        static void OnDisconnected(int connectionId)
         {
             if (LogFilter.Debug) { Debug.Log("Server disconnect client:" + connectionId); }
 
@@ -364,7 +362,7 @@ namespace Mirror
             conn.Dispose();
         }
 
-        static void HandleData(int connectionId, byte[] data, byte error)
+        static void OnDataReceived(int connectionId, byte[] data)
         {
             NetworkConnection conn;
             if (connections.TryGetValue(connectionId, out conn))
@@ -375,6 +373,12 @@ namespace Mirror
             {
                 Debug.LogError("HandleData Unknown connectionId:" + connectionId);
             }
+        }
+
+        private static void OnError(int connectionId, Exception exception)
+        {
+            // TODO Let's discuss how we will handle errors
+            Debug.LogException(exception);
         }
 
         static void OnData(NetworkConnection conn, byte[] data)
@@ -931,6 +935,8 @@ namespace Mirror
 #if UNITY_EDITOR
 #if UNITY_2018_3_OR_NEWER
             return UnityEditor.PrefabUtility.IsPartOfPrefabAsset(obj);
+#elif UNITY_2018_2_OR_NEWER
+            return (UnityEditor.PrefabUtility.GetCorrespondingObjectFromSource(obj) == null) && (UnityEditor.PrefabUtility.GetPrefabObject(obj) != null);
 #else
             return (UnityEditor.PrefabUtility.GetPrefabParent(obj) == null) && (UnityEditor.PrefabUtility.GetPrefabObject(obj) != null);
 #endif
