@@ -81,21 +81,6 @@ namespace Mirror
 
             private AsyncOperation m_AsyncOperationInstance = null;
         }
-        
-        // transport layer
-        // -> automatically uses the first transport component. there might be
-        //    multiple in case of multiplexing, so the order matters.
-        ITransport _transport;
-        public virtual ITransport transport
-        {
-            get
-            {
-                _transport = _transport ?? GetComponent<ITransport>();
-                if (_transport == null)
-                    Debug.LogWarning("NetworkManager has no Transport component. Networking won't work without a Transport");
-                return _transport;
-            }
-        }
 
         // configuration
         [FormerlySerializedAs("m_DontDestroyOnLoad")] public bool dontDestroyOnLoad = true;
