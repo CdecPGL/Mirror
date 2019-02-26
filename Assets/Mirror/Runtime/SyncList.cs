@@ -103,10 +103,8 @@ namespace Mirror
 
         readonly List<T> m_Objects = new List<T>();
 
-        private bool _isReadOnly = false;
-
-        public int Count { get { return m_Objects.Count; } }
-        public bool IsReadOnly { get { return _isReadOnly; } }
+        public int Count => m_Objects.Count;
+        public bool IsReadOnly { get; private set; }
         public event SyncListChanged Callback;
 
         public enum Operation : byte
@@ -168,11 +166,7 @@ namespace Mirror
 
             Changes.Add(change);
 
-            SyncListChanged listChanged = Callback;
-            if (listChanged != null)
-            {
-                listChanged(op, itemIndex, item);
-            }
+            Callback?.Invoke(op, itemIndex, item);
         }
 
         void AddOperation(Operation op, int itemIndex)
@@ -242,7 +236,7 @@ namespace Mirror
         public void OnDeserializeAll(NetworkReader reader)
         {
             // This list can now only be modified by synchronization
-            _isReadOnly = true;
+            IsReadOnly = true;
 
             // if init,  write the full list content
             int count = reader.ReadInt32();
@@ -265,7 +259,7 @@ namespace Mirror
         public void OnDeserializeDelta(NetworkReader reader)
         {
             // This list can now only be modified by synchronization
-            _isReadOnly = true;
+            IsReadOnly = true;
 
             int changesCount = reader.ReadInt32();
 
@@ -334,14 +328,12 @@ namespace Mirror
                         break;
                 }
 
-                SyncListChanged listChanged = Callback;
-                if (apply && listChanged != null)
+                if (apply)
                 {
-                    listChanged(operation, index, item);
+                    Callback?.Invoke(operation, index, item);
                 }
-
                 // we just skipped this change
-                if (!apply)
+                else
                 {
                     changesAhead--;
                 }
@@ -383,7 +375,7 @@ namespace Mirror
 
         public bool Remove(T item)
         {
-            var result = m_Objects.Remove(item);
+            bool result = m_Objects.Remove(item);
             if (result)
             {
                 AddOperation(Operation.OP_REMOVE, 0, item);
@@ -433,9 +425,6 @@ namespace Mirror
             return m_Objects.GetEnumerator();
         }
 
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
-        }
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }

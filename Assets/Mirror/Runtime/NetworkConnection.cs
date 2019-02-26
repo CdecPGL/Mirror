@@ -16,10 +16,10 @@ namespace Mirror
         public bool isReady;
         public string address;
         public float lastMessageTime;
-        public NetworkIdentity playerController { get { return m_PlayerController; } }
+        public NetworkIdentity playerController => m_PlayerController;
         public HashSet<uint> clientOwnedObjects;
         public bool logNetworkMessages;
-        public bool isConnected { get { return hostId != -1; }}
+        public bool isConnected => hostId != -1;
 
         public NetworkConnection(string networkAddress)
         {
@@ -52,8 +52,7 @@ namespace Mirror
             {
                 foreach (uint netId in clientOwnedObjects)
                 {
-                    NetworkIdentity identity;
-                    if (NetworkIdentity.spawned.TryGetValue(netId, out identity))
+                    if (NetworkIdentity.spawned.TryGetValue(netId, out NetworkIdentity identity))
                     {
                         identity.ClearClientOwner();
                     }
@@ -73,13 +72,12 @@ namespace Mirror
             isReady = false;
             ClientScene.HandleClientDisconnect(this);
 
-            // client? then stop transport
-            if (NetworkManager.singleton.transport.ClientConnected())
-            {
-                NetworkManager.singleton.transport.ClientDisconnect();
-            }
+            // paul:  we may be connecting or connected,  either way, we need to disconnect
+            // transport should not do anything if it is not connecting/connected
+            NetworkManager.singleton.transport.ClientDisconnect();
+
             // server? then disconnect that client
-            else if (NetworkManager.singleton.transport.ServerActive())
+            if (NetworkManager.singleton.transport.ServerActive())
             {
                 NetworkManager.singleton.transport.ServerDisconnect(connectionId);
             }
@@ -103,13 +101,14 @@ namespace Mirror
 
         public bool InvokeHandler(short msgType, NetworkReader reader)
         {
-            NetworkMessageDelegate msgDelegate;
-            if (m_MessageHandlers.TryGetValue(msgType, out msgDelegate))
+            if (m_MessageHandlers.TryGetValue(msgType, out NetworkMessageDelegate msgDelegate))
             {
-                NetworkMessage message = new NetworkMessage();
-                message.msgType = msgType;
-                message.conn = this;
-                message.reader = reader;
+                NetworkMessage message = new NetworkMessage
+                {
+                    msgType = msgType,
+                    conn = this,
+                    reader = reader
+                };
 
                 msgDelegate(message);
                 return true;
@@ -120,8 +119,7 @@ namespace Mirror
 
         public bool InvokeHandler(NetworkMessage netMsg)
         {
-            NetworkMessageDelegate msgDelegate;
-            if (m_MessageHandlers.TryGetValue(netMsg.msgType, out msgDelegate))
+            if (m_MessageHandlers.TryGetValue(netMsg.msgType, out NetworkMessageDelegate msgDelegate))
             {
                 msgDelegate(netMsg);
                 return true;
@@ -155,17 +153,14 @@ namespace Mirror
 
         public virtual bool Send(short msgType, MessageBase msg, int channelId = Channels.DefaultReliable)
         {
-            NetworkWriter writer = new NetworkWriter();
-            msg.Serialize(writer);
-
             // pack message and send
-            byte[] message = Protocol.PackMessage((ushort)msgType, writer.ToArray());
+            byte[] message = Protocol.PackMessage((ushort)msgType, msg);
             return SendBytes(message, channelId);
         }
 
-        // protected because no one except NetworkConnection should ever send bytes directly to the client, as they
-        // would be detected as some kind of message. send messages instead.
-        protected virtual bool SendBytes( byte[] bytes, int channelId = Channels.DefaultReliable)
+        // internal because no one except Mirror should send bytes directly to
+        // the client. they would be detected as a message. send messages instead.
+        internal virtual bool SendBytes( byte[] bytes, int channelId = Channels.DefaultReliable)
         {
             if (logNetworkMessages) { Debug.Log("ConnectionSend con:" + connectionId + " bytes:" + BitConverter.ToString(bytes)); }
 
@@ -182,8 +177,7 @@ namespace Mirror
                 return false;
             }
 
-            byte error;
-            return TransportSend(channelId, bytes, out error);
+            return TransportSend(channelId, bytes, out byte error);
         }
 
         // handle this message
@@ -196,32 +190,32 @@ namespace Mirror
         protected void HandleBytes(byte[] buffer)
         {
             // unpack message
-            ushort msgType;
-            byte[] content;
-            if (Protocol.UnpackMessage(buffer, out msgType, out content))
+            NetworkReader reader = new NetworkReader(buffer);
+            if (Protocol.UnpackMessage(reader, out ushort msgType))
             {
                 if (logNetworkMessages)
                 {
                     if (Enum.IsDefined(typeof(MsgType), msgType))
                     {
                         // one of Mirror mesage types,  display the message name
-                        Debug.Log("ConnectionRecv con:" + connectionId + " msgType:" + (MsgType)msgType + " content:" + BitConverter.ToString(content));
+                        Debug.Log("ConnectionRecv con:" + connectionId + " msgType:" + (MsgType)msgType + " buffer:" + BitConverter.ToString(buffer));
                     }
                     else
                     {
                         // user defined message,  display the number
-                        Debug.Log("ConnectionRecv con:" + connectionId + " msgType:" + msgType + " content:" + BitConverter.ToString(content));
+                        Debug.Log("ConnectionRecv con:" + connectionId + " msgType:" + msgType + " buffer:" + BitConverter.ToString(buffer));
                     }
                 }
 
-                NetworkMessageDelegate msgDelegate;
-                if (m_MessageHandlers.TryGetValue((short)msgType, out msgDelegate))
+                if (m_MessageHandlers.TryGetValue((short)msgType, out NetworkMessageDelegate msgDelegate))
                 {
                     // create message here instead of caching it. so we can add it to queue more easily.
-                    NetworkMessage msg = new NetworkMessage();
-                    msg.msgType = (short)msgType;
-                    msg.reader = new NetworkReader(content);
-                    msg.conn = this;
+                    NetworkMessage msg = new NetworkMessage
+                    {
+                        msgType = (short)msgType,
+                        reader = reader,
+                        conn = this
+                    };
 
                     msgDelegate(msg);
                     lastMessageTime = Time.time;

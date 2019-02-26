@@ -12,7 +12,7 @@ Commands are sent from player objects on the client to player objects on the ser
 
 Commands functions must have the prefix “Cmd”. This is a hint when reading code that calls the command - this function is special and is not invoked locally like a normal function.
 
-```
+```cs
 class Player : NetworkBehaviour
 {
     public GameObject bulletPrefab;
@@ -53,10 +53,9 @@ ClientRpc calls are sent from objects on the server to objects on clients. They 
 
 ClientRpc functions must have the prefix “Rpc”. This is a hint when reading code that calls the method - this function is special and is not invoked locally like a normal function.
 
-```
+```cs
 class Player : NetworkBehaviour
 {
-
     [SyncVar]
     int health;
 
@@ -79,6 +78,35 @@ class Player : NetworkBehaviour
 
 When running a game as a host with a LocalClient, ClientRpc calls will be invoked on the LocalClient - even though it is in the same process as the server. So the behaviour of LocalClients and RemoteClients is the same for ClientRpc calls.
 
+## TargetRpc Calls
+
+TargetRpc functions are called by user code on the server, and then invoked on the corresponding client object on the client of the specified NetworkConnection. The arguments to the RPC call are serialized across the network, so that the client function is invoked with the same values as the function on the server. These functions must begin with the prefix "Target" and cannot be static.
+
+The first argument to an TargetRpc function must be a NetworkConnection object.
+
+This example shows how a client can use a Command to make a request from the server (CmdTest) by including its own `connectionToClient` as one of the parameters of the TargetRpc invoked directly from that Command:
+
+```cs
+using UnityEngine;
+using UnityEngine.Networking;
+
+public class Example : NetworkBehaviour
+{
+    [Command]
+    void CmdTest()
+    {
+        TargetDoMagic(connectionToClient, 55);
+    }
+
+    [TargetRpc]
+    public void TargetDoMagic(NetworkConnection target, int extra)
+    {
+        // This output will appear on the client that called the [Command] above
+        Debug.Log("Magic = " + (123 + extra));
+    }
+}
+```
+
 ## Arguments to Remote Actions
 
 The arguments passed to commands and ClientRpc calls are serialized and sent over the network. These arguments can be:
@@ -88,8 +116,6 @@ The arguments passed to commands and ClientRpc calls are serialized and sent ove
 -   structs containing allowable types
 -   built-in unity math types (Vector3, Quaternion, etc)
 -   NetworkIdentity
--   NetworkInstanceId
--   NetworkHash128
 -   GameObject with a NetworkIdentity component attached
 
 Arguments to remote actions cannot be subcomponents of GameObjects, such as script instances or Transforms. They cannot be other types that cannot be serialized across the network.

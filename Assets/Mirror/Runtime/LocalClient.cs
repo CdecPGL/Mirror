@@ -6,29 +6,33 @@ namespace Mirror
 {
     sealed class LocalClient : NetworkClient
     {
+        // local client in host mode might call Cmds/Rpcs during Update, but we
+        // want to apply them in LateUpdate like all other Transport messages
+        // to avoid race conditions.
+        // -> that's why there is an internal message queue.
         Queue<NetworkMessage> m_InternalMsgs = new Queue<NetworkMessage>();
         bool m_Connected;
 
         public override void Disconnect()
         {
-            ClientScene.HandleClientDisconnect(m_Connection);
+            ClientScene.HandleClientDisconnect(connection);
             if (m_Connected)
             {
                 PostInternalMessage((short)MsgType.Disconnect);
                 m_Connected = false;
             }
             connectState = ConnectState.Disconnected;
-            NetworkServer.RemoveLocalClient(m_Connection);
+            NetworkServer.RemoveLocalClient(connection);
         }
 
         internal void InternalConnectLocalServer(bool generateConnectMsg)
         {
-            m_Connection = new ULocalConnectionToServer();
-            SetHandlers(m_Connection);
-            m_Connection.connectionId = NetworkServer.AddLocalClient(this);
+            connection = new ULocalConnectionToServer();
+            SetHandlers(connection);
+            connection.connectionId = NetworkServer.AddLocalClient(this);
             connectState = ConnectState.Connected;
 
-            SetActive(true);
+            active = true;
             RegisterSystemHandlers(true);
 
             if (generateConnectMsg)
@@ -40,31 +44,39 @@ namespace Mirror
 
         internal override void Update()
         {
-            ProcessInternalMessages();
+            // process internal messages so they are applied at the correct time
+            while (m_InternalMsgs.Count > 0)
+            {
+                NetworkMessage internalMessage = m_InternalMsgs.Dequeue();
+                connection.InvokeHandler(internalMessage);
+                connection.lastMessageTime = Time.time;
+            }
         }
 
         // Called by the server to set the LocalClient's LocalPlayer object during NetworkServer.AddPlayer()
         internal void AddLocalPlayer(NetworkIdentity localPlayer)
         {
-            if (LogFilter.Debug) Debug.Log("Local client AddLocalPlayer " + localPlayer.gameObject.name + " conn=" + m_Connection.connectionId);
-            m_Connection.isReady = true;
-            m_Connection.SetPlayerController(localPlayer);
+            if (LogFilter.Debug) Debug.Log("Local client AddLocalPlayer " + localPlayer.gameObject.name + " conn=" + connection.connectionId);
+            connection.isReady = true;
+            connection.SetPlayerController(localPlayer);
             if (localPlayer != null)
             {
                 localPlayer.EnableIsClient();
                 NetworkIdentity.spawned[localPlayer.netId] = localPlayer;
-                localPlayer.SetConnectionToServer(m_Connection);
+                localPlayer.SetConnectionToServer(connection);
             }
             // there is no SystemOwnerMessage for local client. add to ClientScene here instead
             ClientScene.InternalAddPlayer(localPlayer);
         }
 
-        void PostInternalMessage(short msgType, byte[] content)
+        void PostInternalMessage(short msgType, NetworkReader contentReader)
         {
-            NetworkMessage msg = new NetworkMessage();
-            msg.msgType = msgType;
-            msg.reader = new NetworkReader(content);
-            msg.conn = connection;
+            NetworkMessage msg = new NetworkMessage
+            {
+                msgType = msgType,
+                reader = contentReader,
+                conn = connection
+            };
             m_InternalMsgs.Enqueue(msg);
         }
 
@@ -72,28 +84,17 @@ namespace Mirror
         {
             // call PostInternalMessage with empty content array if we just want to call a message like Connect
             // -> original NetworkTransport used empty [] and not null array for those messages too
-            PostInternalMessage(msgType, new byte[0]);
-        }
-
-        void ProcessInternalMessages()
-        {
-            while (m_InternalMsgs.Count > 0)
-            {
-                NetworkMessage internalMessage = m_InternalMsgs.Dequeue();
-                m_Connection.InvokeHandler(internalMessage);
-                connection.lastMessageTime = Time.time;
-            }
+            PostInternalMessage(msgType, new NetworkReader(new byte[0]));
         }
 
         // called by the server, to bypass network
         internal void InvokeBytesOnClient(byte[] buffer)
         {
             // unpack message and post to internal list for processing
-            ushort msgType;
-            byte[] content;
-            if (Protocol.UnpackMessage(buffer, out msgType, out content))
+            NetworkReader reader = new NetworkReader(buffer);
+            if (Protocol.UnpackMessage(reader, out ushort msgType))
             {
-                PostInternalMessage((short)msgType, content);
+                PostInternalMessage((short)msgType, reader);
             }
             else Debug.LogError("InvokeBytesOnClient failed to unpack message: " + BitConverter.ToString(buffer));
         }

@@ -10,28 +10,24 @@ namespace Mirror
     [AddComponentMenu("")]
     public class NetworkBehaviour : MonoBehaviour
     {
-        ulong m_SyncVarDirtyBits; // ulong instead of uint for 64 instead of 32 SyncVar limit per component
         float m_LastSendTime;
 
         // sync interval for OnSerialize (in seconds)
         // hidden because NetworkBehaviourInspector shows it only if has OnSerialize.
         [HideInInspector] public float syncInterval = 0.1f;
 
-        // this prevents recursion when SyncVar hook functions are called.
-        bool m_SyncVarGuard;
-
-        public bool localPlayerAuthority { get { return netIdentity.localPlayerAuthority; } }
-        public bool isServer { get { return netIdentity.isServer; } }
-        public bool isClient { get { return netIdentity.isClient; } }
-        public bool isLocalPlayer { get { return netIdentity.isLocalPlayer; } }
-        public bool isServerOnly { get { return isServer && !isClient; } }
-        public bool isClientOnly { get { return isClient && !isServer; } }
-        public bool hasAuthority { get { return netIdentity.hasAuthority; } }
-        public uint netId { get { return netIdentity.netId; } }
-        public NetworkConnection connectionToServer { get { return netIdentity.connectionToServer; } }
-        public NetworkConnection connectionToClient { get { return netIdentity.connectionToClient; } }
-        protected ulong syncVarDirtyBits { get { return m_SyncVarDirtyBits; } }
-        protected bool syncVarHookGuard { get { return m_SyncVarGuard; } set { m_SyncVarGuard = value; }}
+        public bool localPlayerAuthority => netIdentity.localPlayerAuthority;
+        public bool isServer => netIdentity.isServer; 
+        public bool isClient => netIdentity.isClient; 
+        public bool isLocalPlayer => netIdentity.isLocalPlayer; 
+        public bool isServerOnly => isServer && !isClient;
+        public bool isClientOnly => isClient && !isServer;
+        public bool hasAuthority => netIdentity.hasAuthority;
+        public uint netId => netIdentity.netId; 
+        public NetworkConnection connectionToServer => netIdentity.connectionToServer;
+        public NetworkConnection connectionToClient => netIdentity.connectionToClient;
+        protected ulong syncVarDirtyBits { get; private set; }
+        protected bool syncVarHookGuard { get; set; }
 
         // objects that can synchronize themselves,  such as synclists
         protected readonly List<SyncObject> m_SyncObjects = new List<SyncObject>();
@@ -93,11 +89,13 @@ namespace Mirror
             }
 
             // construct the message
-            CommandMessage message = new CommandMessage();
-            message.netId = netId;
-            message.componentIndex = ComponentIndex;
-            message.functionHash = (invokeClass + ":" + cmdName).GetStableHashCode(); // type+func so Inventory.RpcUse != Equipment.RpcUse
-            message.payload = writer.ToArray();
+            CommandMessage message = new CommandMessage
+            {
+                netId = netId,
+                componentIndex = ComponentIndex,
+                functionHash = (invokeClass + ":" + cmdName).GetStableHashCode(), // type+func so Inventory.RpcUse != Equipment.RpcUse
+                payload = writer.ToArray()
+            };
 
             ClientScene.readyConnection.Send((short)MsgType.Command, message, channelId);
         }
@@ -121,11 +119,13 @@ namespace Mirror
             }
 
             // construct the message
-            RpcMessage message = new RpcMessage();
-            message.netId = netId;
-            message.componentIndex = ComponentIndex;
-            message.functionHash = (invokeClass + ":" + rpcName).GetStableHashCode(); // type+func so Inventory.RpcUse != Equipment.RpcUse
-            message.payload = writer.ToArray();
+            RpcMessage message = new RpcMessage
+            {
+                netId = netId,
+                componentIndex = ComponentIndex,
+                functionHash = (invokeClass + ":" + rpcName).GetStableHashCode(), // type+func so Inventory.RpcUse != Equipment.RpcUse
+                payload = writer.ToArray()
+            };
 
             NetworkServer.SendToReady(netIdentity, (short)MsgType.Rpc, message, channelId);
         }
@@ -141,11 +141,13 @@ namespace Mirror
             }
 
             // construct the message
-            RpcMessage message = new RpcMessage();
-            message.netId = netId;
-            message.componentIndex = ComponentIndex;
-            message.functionHash = (invokeClass + ":" + rpcName).GetStableHashCode(); // type+func so Inventory.RpcUse != Equipment.RpcUse
-            message.payload = writer.ToArray();
+            RpcMessage message = new RpcMessage
+            {
+                netId = netId,
+                componentIndex = ComponentIndex,
+                functionHash = (invokeClass + ":" + rpcName).GetStableHashCode(), // type+func so Inventory.RpcUse != Equipment.RpcUse
+                payload = writer.ToArray()
+            };
 
             conn.Send((short)MsgType.Rpc, message, channelId);
         }
@@ -168,11 +170,13 @@ namespace Mirror
             }
 
             // construct the message
-            SyncEventMessage message = new SyncEventMessage();
-            message.netId = netId;
-            message.componentIndex = ComponentIndex;
-            message.functionHash = (invokeClass + ":" + eventName).GetStableHashCode(); // type+func so Inventory.RpcUse != Equipment.RpcUse
-            message.payload = writer.ToArray();
+            SyncEventMessage message = new SyncEventMessage
+            {
+                netId = netId,
+                componentIndex = ComponentIndex,
+                functionHash = (invokeClass + ":" + eventName).GetStableHashCode(), // type+func so Inventory.RpcUse != Equipment.RpcUse
+                payload = writer.ToArray()
+            };
 
             NetworkServer.SendToReady(netIdentity, (short)MsgType.SyncEvent, message, channelId);
         }
@@ -219,10 +223,12 @@ namespace Mirror
                     invokeClass,
                     oldInvoker.invokeFunction.GetMethodName()));
             }
-            Invoker invoker = new Invoker();
-            invoker.invokeType = invokerType;
-            invoker.invokeClass = invokeClass;
-            invoker.invokeFunction = func;
+            Invoker invoker = new Invoker
+            {
+                invokeType = invokerType,
+                invokeClass = invokeClass,
+                invokeFunction = func
+            };
             s_CmdHandlerDelegates[cmdHash] = invoker;
             if (LogFilter.Debug) { Debug.Log("RegisterDelegate hash:" + cmdHash + " invokerType: " + invokerType + " method:" + func.GetMethodName()); }
         }
@@ -264,8 +270,7 @@ namespace Mirror
         // InvokeCmd/Rpc/SyncEventDelegate can all use the same function here
         internal bool InvokeHandlerDelegate(int cmdHash, UNetInvokeType invokeType, NetworkReader reader)
         {
-            Invoker invoker;
-            if (GetInvokerForHash(cmdHash, invokeType, out invoker) &&
+            if (GetInvokerForHash(cmdHash, invokeType, out Invoker invoker) &&
                 invoker.invokeClass.IsInstanceOfType(this))
             {
                 invoker.invokeFunction(this, reader);
@@ -280,7 +285,7 @@ namespace Mirror
         [EditorBrowsable(EditorBrowsableState.Never)]
         protected void SetSyncVarGameObject(GameObject newGameObject, ref GameObject gameObjectField, ulong dirtyBit, ref uint netIdField)
         {
-            if (m_SyncVarGuard)
+            if (syncVarHookGuard)
                 return;
 
             uint newNetId = 0;
@@ -320,8 +325,7 @@ namespace Mirror
 
             // client always looks up based on netId because objects might get in and out of range
             // over and over again, which shouldn't null them forever
-            NetworkIdentity identity;
-            if (NetworkIdentity.spawned.TryGetValue(netId, out identity) && identity != null)
+            if (NetworkIdentity.spawned.TryGetValue(netId, out NetworkIdentity identity) && identity != null)
                 return identity.gameObject;
             return null;
         }
@@ -330,7 +334,7 @@ namespace Mirror
         [EditorBrowsable(EditorBrowsableState.Never)]
         protected void SetSyncVarNetworkIdentity(NetworkIdentity newIdentity, ref NetworkIdentity identityField, ulong dirtyBit, ref uint netIdField)
         {
-            if (m_SyncVarGuard)
+            if (syncVarHookGuard)
                 return;
 
             uint newNetId = 0;
@@ -366,8 +370,7 @@ namespace Mirror
 
             // client always looks up based on netId because objects might get in and out of range
             // over and over again, which shouldn't null them forever
-            NetworkIdentity identity;
-            NetworkIdentity.spawned.TryGetValue(netId, out identity);
+            NetworkIdentity.spawned.TryGetValue(netId, out NetworkIdentity identity);
             return identity;
         }
 
@@ -387,13 +390,13 @@ namespace Mirror
         // these are masks, not bit numbers, ie. 0x004 not 2
         public void SetDirtyBit(ulong dirtyBit)
         {
-            m_SyncVarDirtyBits |= dirtyBit;
+            syncVarDirtyBits |= dirtyBit;
         }
 
         public void ClearAllDirtyBits()
         {
             m_LastSendTime = Time.time;
-            m_SyncVarDirtyBits = 0L;
+            syncVarDirtyBits = 0L;
 
             // flush all unsynchronized changes in syncobjects
             m_SyncObjects.ForEach(obj => obj.Flush());
@@ -418,7 +421,7 @@ namespace Mirror
         {
             if (Time.time - m_LastSendTime >= syncInterval)
             {
-                return m_SyncVarDirtyBits != 0L || AnySyncObjectDirty();
+                return syncVarDirtyBits != 0L || AnySyncObjectDirty();
             }
             return false;
         }

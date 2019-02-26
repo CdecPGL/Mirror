@@ -3,6 +3,7 @@ using System;
 using UnityEngine;
 namespace Mirror
 {
+    [HelpURL("https://github.com/vis2k/Telepathy/blob/master/README.md")]
     public class TelepathyTransport : Transport
     {
         public ushort port = 7777;
@@ -16,9 +17,9 @@ namespace Mirror
         void Awake()
         {
             // tell Telepathy to use Unity's Debug.Log
-            Telepathy.Logger.LogMethod = Debug.Log;
-            Telepathy.Logger.LogWarningMethod = Debug.LogWarning;
-            Telepathy.Logger.LogErrorMethod = Debug.LogError;
+            Telepathy.Logger.Log = Debug.Log;
+            Telepathy.Logger.LogWarning = Debug.LogWarning;
+            Telepathy.Logger.LogError = Debug.LogError;
 
             // configure
             client.NoDelay = NoDelay;
@@ -39,12 +40,10 @@ namespace Mirror
 
         bool ProcessClientMessage()
         {
-            Telepathy.Message message;
-            if (client.GetNextMessage(out message))
+            if (client.GetNextMessage(out Telepathy.Message message))
             {
                 switch (message.eventType)
                 {
-                    // convert Telepathy EventType to TransportEvent
                     case Telepathy.EventType.Connected:
                         OnClientConnected.Invoke();
                         break;
@@ -66,10 +65,18 @@ namespace Mirror
         }
         public override void ClientDisconnect() { client.Disconnect(); }
 
-        public void Update()
+        // IMPORTANT: set script execution order to >1000 to call Transport's
+        //            LateUpdate after all others. Fixes race condition where
+        //            e.g. in uSurvival Transport would apply Cmds before
+        //            ShoulderRotation.LateUpdate, resulting in projectile
+        //            spawns at the point before shoulder rotation.
+        public void LateUpdate()
         {
-            while (ProcessClientMessage()) { }
-            while (ProcessServerMessage()) { }
+            // note: we need to check enabled in case we set it to false
+            // when LateUpdate already started.
+            // (https://github.com/vis2k/Mirror/pull/379)
+            while (enabled && ProcessClientMessage()) { }
+            while (enabled && ProcessServerMessage()) { }
         }
 
         // server
@@ -78,12 +85,10 @@ namespace Mirror
         public override bool ServerSend(int connectionId, int channelId, byte[] data) { return server.Send(connectionId, data); }
         public bool ProcessServerMessage()
         {
-            Telepathy.Message message;
-            if (server.GetNextMessage(out message))
+            if (server.GetNextMessage(out Telepathy.Message message))
             {
                 switch (message.eventType)
                 {
-                    // convert Telepathy EventType to TransportEvent
                     case Telepathy.EventType.Connected:
                         OnServerConnected.Invoke(message.connectionId);
                         break;
@@ -103,7 +108,7 @@ namespace Mirror
             return false;
         }
         public override bool ServerDisconnect(int connectionId) { return server.Disconnect(connectionId); }
-        public override bool GetConnectionInfo(int connectionId, out string address) { return server.GetConnectionInfo(connectionId, out address); }
+        public override string ServerGetClientAddress(int connectionId) { return server.GetClientAddress(connectionId); }
         public override void ServerStop() { server.Stop(); }
 
         // common
@@ -122,7 +127,7 @@ namespace Mirror
 
         public override string ToString()
         {
-            if (server.Active)
+            if (server.Active && server.listener != null)
             {
                 return "Telepathy Server port: " + server.listener.LocalEndpoint;
             }
