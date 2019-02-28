@@ -9,7 +9,8 @@ namespace Mirror
         // the client (can be a regular NetworkClient or a LocalClient)
         public static NetworkClient singleton;
 
-        int clientId = -1;
+        [Obsolete("Use NetworkClient.singleton instead. There is always exactly one client.")]
+        public static List<NetworkClient> allClients => new List<NetworkClient>{singleton};
 
         public readonly Dictionary<short, NetworkMessageDelegate> handlers = new Dictionary<short, NetworkMessageDelegate>();
 
@@ -20,7 +21,7 @@ namespace Mirror
             None,
             Connecting,
             Connected,
-            Disconnected,
+            Disconnected
         }
         protected ConnectState connectState = ConnectState.None;
 
@@ -58,20 +59,20 @@ namespace Mirror
             serverIp = ip;
 
             connectState = ConnectState.Connecting;
-            NetworkManager.singleton.transport.ClientConnect(ip);
+            Transport.activeTransport.ClientConnect(ip);
 
             // setup all the handlers
-            connection = new NetworkConnection(serverIp, clientId, 0);
+            connection = new NetworkConnection(serverIp, 0);
             connection.SetHandlers(handlers);
         }
 
         private void InitializeTransportHandlers()
         {
             // TODO do this in inspector?
-            NetworkManager.singleton.transport.OnClientConnected.AddListener(OnConnected);
-            NetworkManager.singleton.transport.OnClientDataReceived.AddListener(OnDataReceived);
-            NetworkManager.singleton.transport.OnClientDisconnected.AddListener(OnDisconnected);
-            NetworkManager.singleton.transport.OnClientError.AddListener(OnError);
+            Transport.activeTransport.OnClientConnected.AddListener(OnConnected);
+            Transport.activeTransport.OnClientDataReceived.AddListener(OnDataReceived);
+            Transport.activeTransport.OnClientDisconnected.AddListener(OnDisconnected);
+            Transport.activeTransport.OnClientError.AddListener(OnError);
         }
 
         void OnError(Exception exception)
@@ -88,7 +89,7 @@ namespace Mirror
             connection?.InvokeHandlerNoData((short)MsgType.Disconnect);
         }
 
-        void OnDataReceived(byte[] data)
+        protected void OnDataReceived(byte[] data)
         {
             if (connection != null)
             {
@@ -117,8 +118,7 @@ namespace Mirror
         {
             active = true;
             RegisterSystemHandlers(false);
-            clientId = 0;
-            NetworkManager.singleton.transport.enabled = true;
+            Transport.activeTransport.enabled = true;
             InitializeTransportHandlers();
         }
 
@@ -131,18 +131,20 @@ namespace Mirror
                 connection.Disconnect();
                 connection.Dispose();
                 connection = null;
-                clientId = -1;
                 RemoveTransportHandlers();
             }
+
+            // the client's network is not active anymore.
+            active = false;
         }
 
         void RemoveTransportHandlers()
         {
             // so that we don't register them more than once
-            NetworkManager.singleton.transport.OnClientConnected.RemoveListener(OnConnected);
-            NetworkManager.singleton.transport.OnClientDataReceived.RemoveListener(OnDataReceived);
-            NetworkManager.singleton.transport.OnClientDisconnected.RemoveListener(OnDisconnected);
-            NetworkManager.singleton.transport.OnClientError.RemoveListener(OnError);
+            Transport.activeTransport.OnClientConnected.RemoveListener(OnConnected);
+            Transport.activeTransport.OnClientDataReceived.RemoveListener(OnDataReceived);
+            Transport.activeTransport.OnClientDisconnected.RemoveListener(OnDisconnected);
+            Transport.activeTransport.OnClientError.RemoveListener(OnError);
         }
 
         public bool Send(short msgType, MessageBase msg)
@@ -160,23 +162,10 @@ namespace Mirror
             return false;
         }
 
-        public void Shutdown()
-        {
-            if (LogFilter.Debug) Debug.Log("Shutting down client " + clientId);
-            clientId = -1;
-            singleton = null;
-            active = false;
-        }
-
         internal virtual void Update()
         {
-            if (clientId == -1)
-            {
-                return;
-            }
-
             // only update things while connected
-            if (connectState == ConnectState.Connected)
+            if (active && connectState == ConnectState.Connected)
             {
                 NetworkTime.UpdateClient(this);
             }
@@ -262,9 +251,16 @@ namespace Mirror
             UnregisterHandler((short)msgType);
         }
 
-        internal static void UpdateClients()
+        internal static void UpdateClient()
         {
             singleton?.Update();
+        }
+
+        public void Shutdown()
+        {
+            if (LogFilter.Debug) Debug.Log("Shutting down client.");
+            singleton = null;
+            active = false;
         }
 
         public static void ShutdownAll()
