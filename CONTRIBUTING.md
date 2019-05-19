@@ -83,6 +83,7 @@ We can always use more test coverage.
 * **Provide a link to the related issue** if the pull request is a follow up of an existing bug report or enhancement suggestion.
 * **Comment why this pull request represents an enhancement** and give a rationale explaining why you did it that way and not another way.
 * **Use the same coding style as the one used in this project**.
+* **Documentation:** If your PR adds or changes any public properties or methods, you must retain the old versions preceded with `[Obsolete("Describe what to do / use instead")` attribute wherever possbile, and you must update any relevant pages in the /docs folder.  It's not done until it's documented!
 * **Welcome suggestions from the maintainers to improve your pull request**.
 
 Please follow our coding conventions (below) and make sure all of your commits are atomic (one feature per commit). Rebase your pull requests if necessary.
@@ -113,8 +114,8 @@ Start reading our code and you'll get the hang of it. We optimize for readabilit
     Only do GC optimizations and caching in hot path. Avoid it everywhere else to keep the code simple.
 * **Curly Braces { }**
     Always use braces even for one line if's. Unity did this everywhere, and there is value in not accidentally missing a line in an if statement because there were no braces.
-* **Variable naming**  
-    \`NetworkIdentity identity\`, not \`NetworkIdentity uv\` or similar. If the variable needs a comment the name needs to be changed. For example, `msg = ... // the message` use `message = ...` without a comment instead
+* **Naming**
+    Follow [C# standard naming conventions](https://github.com/ktaranov/naming-convention/blob/master/C%23%20Coding%20Standards%20and%20Naming%20Conventions.md). Also, be descriptive. \`NetworkIdentity identity\`, not \`NetworkIdentity uv\` or similar. If you need a comment to explain it, the name needs to be changed. For example, don't do `msg = ... // the message`, use `message = ...` without a comment instead. Avoid prefixes like `m_`, `s_`, or similar.
 * **private** 
     Fields and methods in a class are private by default, no need to use the private keyword there.
 * This is open source software. Consider the people who will read your code, and make it look nice for them. It's sort of like driving a car: Perhaps you love doing donuts when you're alone, but with passengers the goal is to make the ride as smooth as possible.

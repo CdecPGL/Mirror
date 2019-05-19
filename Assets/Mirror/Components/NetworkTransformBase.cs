@@ -28,9 +28,9 @@ namespace Mirror
         // to save bandwidth in the first place.
         // -> can still be modified in the Inspector while the game is running,
         //    but would cause errors immediately and be pretty obvious.
-        [Tooltip("Compresses 16 Byte Quaternion into None=12, Some=6, Much=3, Lots=2 Byte")]
+        [Tooltip("Compresses 16 Byte Quaternion into None=12, Much=3, Lots=2 Byte")]
         [SerializeField] Compression compressRotation = Compression.Much;
-        public enum Compression { None, Much, Lots }; // easily understandable and funny
+        public enum Compression { None, Much, Lots , NoRotation }; // easily understandable and funny
 
         // server
         Vector3 lastPosition;
@@ -139,7 +139,6 @@ namespace Mirror
                 temp.rotation = Quaternion.Euler(xyz[0], xyz[1], xyz[2]);
             }
 
-            // timestamp
             temp.timeStamp = Time.time;
 
             // movement speed: based on how far it moved since last time
@@ -152,10 +151,10 @@ namespace Mirror
             if (start == null)
             {
                 start = new DataPoint{
-                    timeStamp=Time.time - syncInterval,
-                    position=targetComponent.transform.position,
-                    rotation=targetComponent.transform.rotation,
-                    movementSpeed=temp.movementSpeed
+                    timeStamp = Time.time - syncInterval,
+                    position = targetComponent.transform.position,
+                    rotation = targetComponent.transform.rotation,
+                    movementSpeed = temp.movementSpeed
                 };
             }
             // -> second or nth data point? then update previous, but:
@@ -313,7 +312,10 @@ namespace Mirror
         void ApplyPositionAndRotation(Vector3 position, Quaternion rotation)
         {
             targetComponent.transform.position = position;
-            targetComponent.transform.rotation = rotation;
+            if (Compression.NoRotation != compressRotation)
+            {
+                targetComponent.transform.rotation = rotation;
+            }
         }
 
         void Update()

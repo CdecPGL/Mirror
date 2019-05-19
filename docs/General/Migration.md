@@ -75,9 +75,9 @@ public class NetStreamer : NetworkBehaviour
 
 Please note that the default transport (Telepathy), completely ignores channels, all messages are reliable, sequenced and fragmented. They just work with no fuss. If you want to take advantage of unreliable channels use LLAPITransport instead.
 
-### 5. Rename SyncListStruct to SyncListSTRUCT
+### 5. Change SyncListStruct to SyncList
 
-There is a bug in the original UNet Weaver that makes it mess with our `Mirror.SyncListStruct` without checking the namespace. Until Unity officially removes UNET in 2019.1, we will have to use the name `SyncListSTRUCT` instead.
+There is a bug in the original UNet Weaver that makes it mess with our `Mirror.SyncListStruct` without checking the namespace. In Mirror, we fixed SyncLists so that they work with structs by default.
 
 For example, if you have definitions like:
 
@@ -88,7 +88,7 @@ public class SyncListQuest : SyncListStruct<Quest> { }
 replace them with:
 
 ```cs
-public class SyncListQuest : SyncListSTRUCT<Quest> { }
+public class SyncListQuest : SyncList<Quest> { }
 ```
 
 ### 6. Replace NetworkHash128 and NetworkInstanceId
@@ -187,17 +187,17 @@ public override void OnServerAddPlayer(NetworkConnection conn, short playerContr
 }
 ```
 
-In your newly Mirror-capable NetworkManager, if you are using the OnServerAddPlayer override, remove the "playerControllerId" parameter from your override and the base call:
+In your newly Mirror-capable NetworkManager, if you are using the `OnServerAddPlayer` override, remove the "playerControllerId" parameter from your override and the base call, and change the `NetworkReader` into `AddPlayerMessage`:
 
 ```cs
-public override void OnServerAddPlayer(NetworkConnection conn, NetworkReader extraMessageReader)
+public override void OnServerAddPlayer(NetworkConnection conn, AddPlayerMessage extraMessage)
 {
-    base.OnServerAddPlayer(conn, extraMessageReader);
+    base.OnServerAddPlayer(conn, extraMessage);
     // your code
 }
 ```
 
-Note that in both UNet and Mirror the parameter "extraMessageReader" is optional.
+Note that in UNet the parameter "extraMessageReader" is optional, but in Mirror it is required.
 
 ### 10. Pick your transport
 

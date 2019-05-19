@@ -1,12 +1,20 @@
-﻿// wraps UNET's LLAPI for use as HLAPI TransportLayer
+// Coburn: LLAPI is not available on UWP. There are a lot of compile directives here that we're checking against.
+// Checking all of them may be overkill, but it's better to cover all the possible UWP directives. Sourced from
+// https://docs.unity3d.com/Manual/PlatformDependentCompilation.html
+// TODO: Check if LLAPI is supported on Xbox One?
+
+// LLAPITransport wraps UNET's LLAPI for use as a HLAPI TransportLayer, only if you're not on a UWP platform.
+#if !(UNITY_WSA || UNITY_WSA_10_0 || UNITY_WINRT || UNITY_WINRT_10_0 || NETFX_CORE)
+
 using System;
+using System.ComponentModel;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.Networking.Types;
 
 namespace Mirror
 {
-    [Obsolete("LLAPI is obsolete and will be removed from future versions of Unity")]
+    [EditorBrowsable(EditorBrowsableState.Never), Obsolete("LLAPI is obsolete and will be removed from future versions of Unity")]
     public class LLAPITransport : Transport
     {
         public ushort port = 7777;
@@ -83,7 +91,7 @@ namespace Mirror
             Debug.Log("LLAPITransport initialized!");
         }
 
-        // client //////////////////////////////////////////////////////////////
+        #region client
         public override bool ClientConnected()
         {
             return clientConnectionId != -1;
@@ -141,8 +149,7 @@ namespace Mirror
                     OnClientConnected.Invoke();
                     break;
                 case NetworkEventType.DataEvent:
-                    byte[] data = new byte[receivedSize];
-                    Array.Copy(clientReceiveBuffer, data, receivedSize);
+                    ArraySegment<byte> data = new ArraySegment<byte>(clientReceiveBuffer, 0, receivedSize);
                     OnClientDataReceived.Invoke(data);
                     break;
                 case NetworkEventType.DisconnectEvent:
@@ -153,18 +160,6 @@ namespace Mirror
             }
 
             return true;
-        }
-
-        // IMPORTANT: set script execution order to >1000 to call Transport's
-        //            LateUpdate after all others. Fixes race condition where
-        //            e.g. in uSurvival Transport would apply Cmds before
-        //            ShoulderRotation.LateUpdate, resulting in projectile
-        //            spawns at the point before shoulder rotation.
-        public void LateUpdate()
-        {
-            // process all messages
-            while (ProcessClientMessage()) { }
-            while (ProcessServerMessage()) { }
         }
 
         public string ClientGetAddress()
@@ -181,14 +176,9 @@ namespace Mirror
                 clientId = -1;
             }
         }
+        #endregion
 
-        public override bool Available()
-        {
-            // websocket is available in all platforms (including webgl)
-            return useWebsockets || base.Available();
-        }
-
-        // server //////////////////////////////////////////////////////////////
+        #region server
         public override bool ServerActive()
         {
             return serverHostId != -1;
@@ -219,8 +209,7 @@ namespace Mirror
         {
             if (serverHostId == -1) return false;
 
-            int connectionId = -1;
-            NetworkEventType networkEvent = NetworkTransport.ReceiveFromHost(serverHostId, out connectionId, out int channel, serverReceiveBuffer, serverReceiveBuffer.Length, out int receivedSize, out error);
+            NetworkEventType networkEvent = NetworkTransport.ReceiveFromHost(serverHostId, out int connectionId, out int channel, serverReceiveBuffer, serverReceiveBuffer.Length, out int receivedSize, out error);
 
             // note: 'error' is used for extra information, e.g. the reason for
             // a disconnect. we don't necessarily have to throw an error if
@@ -250,8 +239,7 @@ namespace Mirror
                     OnServerConnected.Invoke(connectionId);
                     break;
                 case NetworkEventType.DataEvent:
-                    byte[] data = new byte[receivedSize];
-                    Array.Copy(serverReceiveBuffer, data, receivedSize);
+                    ArraySegment<byte> data = new ArraySegment<byte>(serverReceiveBuffer, 0, receivedSize);
                     OnServerDataReceived.Invoke(connectionId, data);
                     break;
                 case NetworkEventType.DisconnectEvent:
@@ -282,8 +270,27 @@ namespace Mirror
             serverHostId = -1;
             Debug.Log("LLAPITransport.ServerStop");
         }
+        #endregion
 
-        // common //////////////////////////////////////////////////////////////
+        #region common
+        // IMPORTANT: set script execution order to >1000 to call Transport's
+        //            LateUpdate after all others. Fixes race condition where
+        //            e.g. in uSurvival Transport would apply Cmds before
+        //            ShoulderRotation.LateUpdate, resulting in projectile
+        //            spawns at the point before shoulder rotation.
+        public void LateUpdate()
+        {
+            // process all messages
+            while (ProcessClientMessage()) {}
+            while (ProcessServerMessage()) {}
+        }
+
+        public override bool Available()
+        {
+            // websocket is available in all platforms (including webgl)
+            return useWebsockets || base.Available();
+        }
+
         public override void Shutdown()
         {
             NetworkTransport.Shutdown();
@@ -310,5 +317,7 @@ namespace Mirror
             }
             return "LLAPI (inactive/disconnected)";
         }
+        #endregion
     }
 }
+#endif
