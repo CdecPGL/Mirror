@@ -21,66 +21,52 @@ namespace Mirror
     {
         public class AsyncOperationWrapper 
             {
-            public event System.Action<AsyncOperation> completed = (AsyncOperation handler) => { };
+            public event Action<UnityEngine.AsyncOperation> completed = handler => { };
 
             public bool allowSceneActivation
                 {
-                get {
-                    return m_AsyncOperationInstance == null ? false : m_AsyncOperationInstance.allowSceneActivation;
-                }
+                get => asyncOperationInstance != null && asyncOperationInstance.allowSceneActivation;
                 set {
-                    if (m_AsyncOperationInstance != null) {
-                        m_AsyncOperationInstance.allowSceneActivation = value;
+                    if (asyncOperationInstance != null) {
+                        asyncOperationInstance.allowSceneActivation = value;
                     }
                     else {
-                        Debug.LogError("Try to change propaty of AsyncOperationWrapper before set AsyncOperation instance.");
+                        Debug.LogError("Try to change property of AsyncOperationWrapper before set AsyncOperation instance.");
                     }
                 }
             }
 
-            public bool isDone 
-                {
-                get {
-                    return m_AsyncOperationInstance == null ? false : m_AsyncOperationInstance.isDone;
-                }
-            }
+            public bool isDone => asyncOperationInstance?.isDone ?? false;
 
-            public float progress
-                {
-                get {
-                    return m_AsyncOperationInstance == null ? 0 : m_AsyncOperationInstance.progress;
-                }
-            }
+            public float progress => asyncOperationInstance?.progress ?? 0;
 
             public int priority
                 {
-                get {
-                    return m_AsyncOperationInstance == null ? 0 : m_AsyncOperationInstance.priority;
-                }
+                get => asyncOperationInstance?.priority ?? 0;
                 set {
-                    if (m_AsyncOperationInstance != null) {
-                        m_AsyncOperationInstance.priority = value;
+                    if (asyncOperationInstance != null) {
+                        asyncOperationInstance.priority = value;
                     }
                     else {
-                        Debug.LogError("Try to change propaty of AsyncOperationWrapper before set AsyncOperation instance.");
+                        Debug.LogError("Try to change property of AsyncOperationWrapper before set AsyncOperation instance.");
                     }
                 }
             }
 
             public AsyncOperationWrapper() { }
 
-            public AsyncOperationWrapper(AsyncOperation async_op) 
+            public AsyncOperationWrapper(UnityEngine.AsyncOperation async_op) 
                 {
                 SetAsyncOperationInstance(async_op);
             }
 
-            public void SetAsyncOperationInstance(AsyncOperation async_op)
+            public void SetAsyncOperationInstance(UnityEngine.AsyncOperation async_op)
                 {
-                m_AsyncOperationInstance = async_op;
-                m_AsyncOperationInstance.completed += (AsyncOperation handler) => { completed(handler); };
+                asyncOperationInstance = async_op;
+                asyncOperationInstance.completed += handler => completed(handler);
             }
 
-            private AsyncOperation m_AsyncOperationInstance = null;
+            private UnityEngine.AsyncOperation asyncOperationInstance;
         }
 
         // configuration
@@ -540,7 +526,7 @@ namespace Mirror
             // Let client prepare for scene change
             OnClientChangeScene(newSceneName);
 
-            loadingSceneAsync = SceneManager.LoadSceneAsync(newSceneName, new LoadSceneParameters()
+            loadingSceneAsync = LoadSceneAsync(newSceneName, new LoadSceneParameters()
             {
                 loadSceneMode = sceneMode,
                 localPhysicsMode = physicsMode,
