@@ -261,7 +261,13 @@ namespace Telepathy
             ClientToken token;
             if (clients.TryGetValue(connectionId, out token))
             {
+                // Mirror側で対応されるまでの暫定的処置(https://github.com/vis2k/Mirror/issues/954)
+#if ENABLE_IL2CPP
+                Debug.LogWarning("IL2CPPビルドにおいて「SocketException: An address incompatible with the requested protocol was used」が発生するため、現在通信相手のクライアントアドレスは利用できません。");
+                return "";
+#else
                 return ((IPEndPoint)token.client.Client.RemoteEndPoint).Address.ToString();
+#endif
             }
             return "";
         }
