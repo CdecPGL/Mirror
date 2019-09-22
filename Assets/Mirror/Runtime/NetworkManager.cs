@@ -68,7 +68,7 @@ namespace Mirror
                 asyncOperationInstance.completed += handler => completed(handler);
             }
 
-            public static implicit operator UnityEngine.AsyncOperation(UnityEngine.AsyncOperation async_op)
+            public static implicit operator AsyncOperationWrapper(UnityEngine.AsyncOperation async_op)
             {
                 return new AsyncOperationWrapper(async_op);
             }
