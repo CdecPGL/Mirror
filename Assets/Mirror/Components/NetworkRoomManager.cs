@@ -15,7 +15,7 @@ namespace Mirror
     /// <para>The OnRoom*() functions have empty implementations on the NetworkRoomManager base class, so the base class functions do not have to be called.</para>
     /// </remarks>
     [AddComponentMenu("Network/NetworkRoomManager")]
-    [HelpURL("https://mirror-networking.com/xmldocs/articles/Components/NetworkRoomManager.html")]
+    [HelpURL("https://mirror-networking.com/docs/Components/NetworkRoomManager.html")]
     public class NetworkRoomManager : NetworkManager
     {
         public struct PendingPlayer
@@ -161,6 +161,7 @@ namespace Mirror
 
             // replace room player with game player
             NetworkServer.ReplacePlayerForConnection(conn, gamePlayer);
+            roomPlayer.GetComponent<NetworkIdentity>().AssignClientAuthority(conn);
         }
 
         /// <summary>
@@ -261,7 +262,7 @@ namespace Mirror
         /// </summary>
         /// <param name="conn">Connection of the client</param>
         /// <param name="extraMessage"></param>
-        public override void OnServerAddPlayer(NetworkConnection conn, AddPlayerMessage extraMessage)
+        public override void OnServerAddPlayer(NetworkConnection conn)
         {
             if (SceneManager.GetActiveScene().name != RoomScene) return;
 
@@ -608,10 +609,16 @@ namespace Mirror
             if (!showRoomGUI)
                 return;
 
-            if (SceneManager.GetActiveScene().name != RoomScene)
-                return;
+            if (NetworkServer.active && SceneManager.GetActiveScene().name == GameplayScene)
+            {
+                GUILayout.BeginArea(new Rect(Screen.width - 150f, 10f, 140f, 30f));
+                if (GUILayout.Button("Return to Room"))
+                    SceneManager.LoadScene(RoomScene);
+                GUILayout.EndArea();
+            }
 
-            GUI.Box(new Rect(10f, 180f, 520f, 150f), "PLAYERS");
+            if (SceneManager.GetActiveScene().name == RoomScene)
+                GUI.Box(new Rect(10f, 180f, 520f, 150f), "PLAYERS");
         }
 
         #endregion

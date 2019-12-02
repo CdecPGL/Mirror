@@ -1,12 +1,35 @@
 # Change Log
 
-## Version 3.x.x - In Progress
-<<<<<<< HEAD:doc/articles/General/ChangeLog.md
+## Version 5.x.x - In progress
+- Added: SyncMode selector now works for components on any scene objects owned by a client in addition to the player object, e.g. pets
+- Added: Script Templates -- See the new Mirror section in the Assets > Create menu.
+- Fixed: isClient and isServer are now true for networked objects in Start and OnStartClient / OnStartServer, respectively
+- Fixed: hasAuthority is now set before OnStartClient and OnStartLocalPlayer are invoked
+- Changed: connectionToClient is now used to assign client authority
+- Changed: In many respects, the Host player acts a lot more like a client and will reveal bugs better.
+- Removed: NetworkServer.SpawnWithClientAuthority is deprecated in favor of overloads of NetworkServer.Spawn
 
-- Added: Sync-To-Owner via optional attributes and parameter for SyncVars and related classes
-=======
+## Version 5.0.2 - 2019-Nov-03
+- Added: SyncList and SyncSet custom Equality Comparer support
+- Added: Custom serializers may be implemented for any type in Cmd's and Rpc's
+- Added: [Fallback Transport](../Transports/Fallback.md)
+- Fixed: SyncVar hooks are no longer called in Host if no change
+- Fixed: NetworkIdentity no longer throws a null reference exception in RemoveClientAuthority
+- Fixed: Server transport now suspended during scene change to prevent erroneous messages
+- Fixed: SyncList, SyncDictionary and SyncSet now use a custom IEnumerator to avoid memory allocation
+- Fixed: sceneID is no longer reset in certain cases when editing a prefab
+- Changed: PreprocessorDefine code moved to CompilerSymbols folder to avoid paradox of missing symbols preventing the symbols being added to the project.
+- Changed: Host player no longer gets authority assigned to all objects by default
+- Changed: Commands no longer bypass serialization for Host player, making debugging easier
+- Changed: Local connections now maintain their own message queue
+- Changed: Transport.Available is now abstract
+- Removed: Network Identity: Local Player Authority has been removed as no longer necessary
+
+## Version 4.0.7 - 2019-Oct-03
 - Added: [Authentication](../Guides/Authentication.md) support to authenticate clients in the Connect phase
-- Added: Profiler events. These events can be subscribed to by a profiler to provide visual information
+- Added: Profiler events. These events can be subscribed to by the [Network Profiler](../Guides/Profiler.md) to provide visual information
+- Added: Transports now include channel in profiler events
+- Added: Transport abstract class now supports sending a message to a list of connection id's
 - Fixed: SceneMessage now has sceneOperation enum so clients can properly handle additive scenes
 - Fixed: NetworkClient handlers are now cleared in Shutdown
 - Fixed: Offline scene is no longer reloaded when client fails to connect or is rejected
@@ -14,22 +37,29 @@
 - Fixed: Network Room Players are now all in DontDestroyOnLoad so they don't respawn in the game scene
 - Fixed: Network Room example player controller restores main camera on disable
 - Fixed: Components with different sync intervals were not sending updates to clients
+- Fixed: In certain cases, weaver wouldn't weave some external assemblies
+- Fixed: NetworkAnimator now does a full sync for new clients
+- Fixed: NetworkBehaviour inspector now shows SyncMode for private SyncVars
+- Fixed: Calling Commands and Rpcs of parent classes from inherited classes works as it should
+- Fixed: Telepathy no longer hangs when attempting to connect to a nonexistent host
+- Fixed: Websockets Transport now properly returns the client endpoint information via `ServerGetClientAddress`
+- Fixed: WebGL build now works with ArraySegment
+- Changed: Mirror is now free of garbage memory allocation on the sending side.
+    - Some transports may still have a little garbage allocation yet.
+- Changed: Deprecated the AddPlayerMessage extraMessage byte\[\] in favor of an easier approach to [Custom Players](../Guides/GameObjects/SpawnPlayerCustom.md)
+    - This is a breaking change: The virtual method OnServerAddPlayer loses the AddPlayerMessage parameter.
+- Changed: NetworkIdentity.RemoveAuthorityForConnection is now easier to use: no need to supply the current "owner" anymore.
 - Changed: Renamed `NetworkConnection.playerController` to `identity` ... see [Deprecations](Deprecations.md) for details.
 - Changed: Lobby system renamed to Room to better align the name for what it is and make way for a future Lobby framework
 
 ## Version 3.17.4 - 2019-Sep-04
 - Added: Custom Network Readers & Writers via extension methods
 - Added: Network Sync Mode selector on components to sync to observers (default) or just the owner
->>>>>>> master:doc/General/ChangeLog.md
 - Added: SyncVars now support structs and enums in other assemblies
 - Added: Support for reading and writing array segments
 - Added: NetworkAnimator now has layers support
 - Added: New virtual method OnServerChangeScene to NetworkManager
-<<<<<<< HEAD:doc/articles/General/ChangeLog.md
-- Added: XML <summary> comments for intellisense and future generated class docs
-=======
 - Added: XML summary comments for intellisense and future generated class docs
->>>>>>> master:doc/General/ChangeLog.md
 - Updated Examples and Documentation
 - Fixed: SceneID was not set to 0 for prefab variants
 - Fixed: Observers were not properly rebuilt on scene changes
@@ -38,32 +68,19 @@
 - Fixed: Catch IL2CPP bug
 - Fixed: Telepathy and Websockets now start connections ID's at 1 instead of 2
 - Fixed: Websockets support for SSL restored
-<<<<<<< HEAD:doc/articles/General/ChangeLog.md
-- Fixed: NetworkManager no longer complains about missing player prefab if auto-create is disabled.
-=======
 - Fixed: NetworkManager no longer complains about missing player prefab if auto-create is disabled
 - Fixed: Removed a garbage allocation in Network Transform
 - Fixed: NetworkClient.Ready was being called unncessarily in certain cases, e.g. SceneMessages
 - Changed: Documentation moved to website and API generated docs implemented
->>>>>>> master:doc/General/ChangeLog.md
 - Changed: AddPlayerForConnection handler is now internal to keep safety checks intact
 - Changed: A bunch of messages converted to value types for performance
 
 ## Version 3.11.6 - 2019-Jul-10
-<<<<<<< HEAD:doc/articles/General/ChangeLog.md
-
-=======
->>>>>>> master:doc/General/ChangeLog.md
 - Fixed: Telepathy IPv4, IPv6, and FQDN should all work now
 - Fixed: TelepathyTransport error in UWP builds
 - Fixed: OnApplicationQuit is handled better now
 - Fixed: Performance and memory allocation improvements
 - Changed: Telepathy Source is now included instead of a DLL
-<<<<<<< HEAD:doc/articles/General/ChangeLog.md
-
-## Version 3.10.10 - 2019-Jun-19
-=======
->>>>>>> master:doc/General/ChangeLog.md
 
 ## Version 3.10.10 - 2019-Jun-19
 - Added: Scene Message now supports params for SceneMode (Normal / Additive) and PhysicsMode (2D / 3D)
@@ -111,21 +128,12 @@
 
 ## Version 3.4.9 -- 2019-Apr-6
 - Added: Semantic Versioning (which is why we jumped from 1.6 to 3.4.9)
-<<<<<<< HEAD:doc/articles/General/ChangeLog.md
-- Added: [SyncDictionary](../Classes/SyncDictionary.md)
-- Added: [SyncHashSet](../Classes/SyncHashSet.md)
-- Added: [SyncSortedSet](../Classes/SyncSortedSet.md)
-- Added: SyncList and SyncDictionary support all IList and IDictionary derived types, respectively
-- Added: Documentation for [SyncVars](../Classes/SyncVars.md)
-- Added: Documentation for [SyncEvents](../Classes/SyncEvent.md)
-=======
 - Added: [SyncDictionary](../Guides/Sync/SyncDictionary.md)
 - Added: [SyncHashSet](../Guides/Sync/SyncHashSet.md)
 - Added: [SyncSortedSet](../Guides/Sync/SyncSortedSet.md)
 - Added: SyncList and SyncDictionary support all IList and IDictionary derived types, respectively
 - Added: Documentation for [SyncVars](../Guides/Sync/SyncVars.md)
 - Added: Documentation for [SyncEvents](../Guides/Sync/SyncEvent.md)
->>>>>>> master:doc/General/ChangeLog.md
 - Added: NoRotation to NetworkTransform
 - Added: Scale is now included in spawn payload along with position and rotation
 - Added: Generic `IMessageBase` to allow struct message types
@@ -162,14 +170,6 @@
 - Fixed: Persistent SceneID's for Networked objects
 - Changed: Documentation for [Transports](../Transports/index.md)
 - Changed: Weaver is now full source...FINALLY!
-<<<<<<< HEAD:doc/articles/General/ChangeLog.md
-- Changed: ClientScene.AddPlayer 2nd parameter is now `byte[] extraData` instead of `MessageBase extraMessage` 
-    - Please refer to the code sample [here](../Concepts/Authentication.md) to see how to update your code.
-- Changed: NetworkManager -- Headless Auto-Start moved to `Start()` from `Awake()`
-- Changed: Removed Message ID's for all messages - See [Network Messages](../Concepts/Communications/NetworkMessages.md) for details  
-    - Message IDs are now generated automatically based on the message name.  
-    - Previously you would call Send(MyMessage.MsgId, message), now you call Send(message)
-=======
 - Changed: ClientScene.AddPlayer 2nd parameter is now `byte[] extraData` instead of `MessageBase extraMessage`
 
     -   Please refer to the code sample [here](../Guides/Authentication.md) to see how to update your code.
@@ -180,7 +180,6 @@
         
 
     -   Previously you would call Send(MyMessage.MsgId, message), now you call Send(message)
->>>>>>> master:doc/General/ChangeLog.md
 - Removed: Documentation for Groove Transport - use Websockets Transport instead
 
 ## Version 1.5 -- 2019-Mar-01

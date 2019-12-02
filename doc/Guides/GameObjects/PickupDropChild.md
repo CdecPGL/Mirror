@@ -22,33 +22,44 @@ Below is the Player Equip script to handle the changing of the equipped item, an
 
 ``` cs
 using UnityEngine;
+using System.Collections;
 using Mirror;
+
+public enum EquippedItem : byte
+{
+    nothing,
+    ball,
+    box,
+    cylinder
+}
 
 public class PlayerEquip : NetworkBehaviour
 {
-    public enum EquippedItem : byte
-    {
-        nothing,
-        ball,
-        box,
-        cylinder
-    }
-
     public GameObject sceneObjectPrefab;
 
     public GameObject rightHand;
-
-    [SyncVar(hook = nameof(OnChangeEquipment))]
-    public EquippedItem equippedItem;
 
     public GameObject ballPrefab;
     public GameObject boxPrefab;
     public GameObject cylinderPrefab;
 
+    [SyncVar(hook = nameof(OnChangeEquipment))]
+    public EquippedItem equippedItem;
+
     void OnChangeEquipment(EquippedItem newEquippedItem)
     {
+        StartCoroutine(ChangeEquipment(newEquippedItem));
+    }
+
+    // Since Destroy is delayed to the end of the current frame, we use a coroutine
+    // to clear out any child objects before instantiating the new one
+    IEnumerator ChangeEquipment(EquippedItem newEquippedItem)
+    {
         while (rightHand.transform.childCount > 0)
-            DestroyImmediate(rightHand.transform.GetChild(0).gameObject);
+        {
+            Destroy(rightHand.transform.GetChild(0).gameObject);
+            yield return null;
+        }
 
         switch (newEquippedItem)
         {
@@ -115,8 +126,12 @@ First, let's add one more Input to the Update method above, and a `CmdDropItem` 
     [Command]
     void CmdDropItem()
     {
-        // Instantiate the scene object on the server and set the RigidBody as non-kinematic
-        GameObject newSceneObject = Instantiate(sceneObjectPrefab, rightHand.transform.position, rightHand.transform.rotation);
+        // Instantiate the scene object on the server
+        Vector3 pos = rightHand.transform.position;
+        Quaternion rot = rightHand.transform.rotation;
+        GameObject newSceneObject = Instantiate(sceneObjectPrefab, pos, rot);
+
+        // set the RigidBody as non-kinematic on the server only (isKinematic = true in prefab)
         newSceneObject.GetComponent<Rigidbody>().isKinematic = false;
 
         SceneObject sceneObject = newSceneObject.GetComponent<SceneObject>();
@@ -139,6 +154,7 @@ In the image above, there's a `sceneObjectPrefab` field that is assigned to a pr
 
 ``` cs
 using UnityEngine;
+using System.Collections;
 using Mirror;
 
 public class SceneObject : NetworkBehaviour
@@ -152,8 +168,18 @@ public class SceneObject : NetworkBehaviour
 
     void OnChangeEquipment(EquippedItem newEquippedItem)
     {
+        StartCoroutine(ChangeEquipment(newEquippedItem));
+    }
+
+    // Since Destroy is delayed to the end of the current frame, we use a coroutine
+    // to clear out any child objects before instantiating the new one
+    IEnumerator ChangeEquipment(EquippedItem newEquippedItem)
+    {
         while (transform.childCount > 0)
-            DestroyImmediate(transform.GetChild(0).gameObject);
+        {
+            Destroy(transform.GetChild(0).gameObject);
+            yield return null;
+        }
 
         // Use the new value, not the SyncVar property value
         SetEquippedItem(newEquippedItem);
@@ -207,7 +233,7 @@ This method is simply called from `OnMouseDown` in the Scene Object script:
 ``` cs
     void OnMouseDown()
     {
-        NetworkClient.connection.playerController.GetComponent<PlayerEquip>().CmdPickupItem(gameObject);
+        NetworkClient.connection.identity.GetComponent<PlayerEquip>().CmdPickupItem(gameObject);
     }
 ```
 

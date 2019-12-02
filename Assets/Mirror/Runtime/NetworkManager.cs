@@ -19,7 +19,7 @@ namespace Mirror
     }
 
     [AddComponentMenu("Network/NetworkManager")]
-    [HelpURL("https://mirror-networking.com/xmldocs/articles/Components/NetworkManager.html")]
+    [HelpURL("https://mirror-networking.com/docs/Components/NetworkManager.html")]
     public class NetworkManager : MonoBehaviour
     {
         public class AsyncOperationWrapper {
@@ -416,6 +416,7 @@ namespace Mirror
         public virtual void StartHost()
         {
             OnStartHost();
+            NetworkClient.SetupLocalConnection();
             if (StartServer())
             {
                 ConnectLocalClient();
@@ -586,8 +587,8 @@ namespace Mirror
 
             networkAddress = "localhost";
             NetworkServer.ActivateLocalClientScene();
-            NetworkClient.ConnectLocalServer();
             RegisterClientMessages();
+            NetworkClient.ConnectLocalServer();
         }
 
         void RegisterClientMessages()
@@ -700,6 +701,10 @@ namespace Mirror
             };
 
             NetworkServer.SendToAll(msg);
+
+            // Suspend the server's transport while changing scenes
+            // It will be re-enabled in FinishScene.
+            Transport.activeTransport.enabled = false;
 
             startPositionIndex = 0;
             startPositions.Clear();
@@ -932,7 +937,9 @@ namespace Mirror
                 return;
             }
 
+#pragma warning disable CS0618 // Type or member is obsolete
             OnServerAddPlayer(conn, extraMessage);
+#pragma warning restore CS0618 // Type or member is obsolete
         }
 
         void OnServerRemovePlayerMessageInternal(NetworkConnection conn, RemovePlayerMessage msg)
@@ -1064,12 +1071,23 @@ namespace Mirror
         }
 
         /// <summary>
+        /// Obsolete: Override <see cref="OnServerAddPlayer(NetworkConnection)"/> instead.
+        /// <para>See <a href="../Guides/GameObjects/SpawnPlayerCustom.md">Custom Players</a> for details.</para>
+        /// </summary>
+        /// <param name="conn">Connection from client.</param>
+        /// <param name="extraMessage">An extra message object passed for the new player.</param>
+        [EditorBrowsable(EditorBrowsableState.Never), Obsolete("Override OnServerAddPlayer(NetworkConnection conn) instead. See https://mirror-networking.com/docs/Guides/GameObjects/SpawnPlayerCustom.html for details.")]
+        public virtual void OnServerAddPlayer(NetworkConnection conn, AddPlayerMessage extraMessage)
+        {
+            OnServerAddPlayer(conn);
+        }
+
+        /// <summary>
         /// Called on the server when a client adds a new player with ClientScene.AddPlayer.
         /// <para>The default implementation for this function creates a new player object from the playerPrefab.</para>
         /// </summary>
         /// <param name="conn">Connection from client.</param>
-        /// <param name="extraMessage">An extra message object passed for the new player.</param>
-        public virtual void OnServerAddPlayer(NetworkConnection conn, AddPlayerMessage extraMessage)
+        public virtual void OnServerAddPlayer(NetworkConnection conn)
         {
             Transform startPos = GetStartPosition();
             GameObject player = startPos != null
@@ -1109,7 +1127,7 @@ namespace Mirror
         /// <para>The default implementation of this function destroys the corresponding player object.</para>
         /// </summary>
         /// <param name="conn">The connection to remove the player from.</param>
-        /// <param name="player">The player controller to remove.</param>
+        /// <param name="player">The player identity to remove.</param>
         public virtual void OnServerRemovePlayer(NetworkConnection conn, NetworkIdentity player)
         {
             if (player.gameObject != null)

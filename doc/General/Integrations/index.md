@@ -29,3 +29,11 @@ Here we will maintain a list of assets known to be compatible with Mirror.  If y
 ## [Rucksack](https://assetstore.unity.com/packages/templates/systems/rucksack-multiplayer-inventory-system-114921)
 
 ![Rucksack](Rucksack.jpg)
+
+## [Steamworks Networking](https://assetstore.unity.com/packages/tools/integration/steamworks-networking-151300)
+
+![Steamworks Networking](SteamworksNetworking.jpg)
+
+## [Master Audio Multiplayer](https://assetstore.unity.com/packages/tools/audio/master-audio-multiplayer-69547)
+
+![Master Audio Multiplayer](MasterAudioMultiplayer.jpg)

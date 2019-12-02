@@ -10,6 +10,8 @@
   href: Authentication.md
 - name: Conversion
   href: Conversion.md
+- name: Network Profiler
+  href: Profiler.md
 - name: Attributes
   href: Attributes.md
 - name: NetworkBehaviour
@@ -22,7 +24,7 @@
   href: Visibility.md
 - name: Custom Visibility
   href: VisibilityCustom.md
-- name: Syncronization
+- name: Synchronization
   href: Sync/toc.yml
   topicHref: Sync/
 - name: Communications
