@@ -17,6 +17,7 @@ HLAPI also supports SyncLists, but we have redesigned them to better suit our ne
 Create a class that derives from SyncList for your specific type. This is necessary because Mirror will add methods to that class with the weaver. Then add a SyncList field to your NetworkBehaviour class. For example:
 
 ```cs
+[System.Serializable]
 public struct Item
 {
     public string name;
@@ -24,9 +25,10 @@ public struct Item
     public Color32 color;
 }
 
-class SyncListItem : SyncList<Item> {}
+[System.Serializable]
+public class SyncListItem : SyncList<Item> {}
 
-class Player : NetworkBehaviour
+public class Player : NetworkBehaviour
 {
     readonly SyncListItem inventory = new SyncListItem();
 
@@ -77,9 +79,9 @@ class Player : NetworkBehaviour {
         inventory.Callback += OnInventoryUpdated;
     }
 
-    void OnInventoryUpdated(SyncListItem.Operation op, int index, Item item)
+    void OnInventoryUpdated(SyncListItem.Operation op, int index, Item oldItem, Item newItem)
     {
-        switch (op) 
+        switch (op)
         {
             case SyncListItem.Operation.OP_ADD:
                 // index is where it got added in the list
@@ -92,19 +94,11 @@ class Player : NetworkBehaviour {
                 // index is where it got added in the list
                 // item is the new item
                 break;
-            case SyncListItem.Operation.OP_REMOVE:
-                // index is where it got removed in the list
-                // item is the item that was removed
-                break;
             case SyncListItem.Operation.OP_REMOVEAT:
                 // index is where it got removed in the list
                 // item is the item that was removed
                 break;
             case SyncListItem.Operation.OP_SET:
-                // index is the index of the item that was updated
-                // item is the previous item
-                break;
-            case SyncListItem.Operation.OP_DIRTY:
                 // index is the index of the item that was updated
                 // item is the previous item
                 break;
@@ -116,7 +110,7 @@ class Player : NetworkBehaviour {
 By default, SyncList uses a List to store it's data. If you want to use a different list implementation, add a constructor and pass the list implementation to the parent constructor. For example:
 
 ```cs
-class SyncListItem : SyncList<Item> 
+class SyncListItem : SyncList<Item>
 {
     public SyncListItem() : base(new MyIList<Item>()) {}
 }

@@ -1,17 +1,24 @@
 # Data types
 
+[![built in data types video tutorial](../images/video_tutorial.png)](https://www.youtube.com/watch?v=DIIeGYAawY0&list=PLkx8oFug638oBYF5EOwsSS-gOVBXj1dkP&index=9)
+
 The client and server can pass data to each other via [Remote methods](Communications/RemoteActions.md), [State Synchronization](Sync/index.md) or via [Network Messages](Communications/NetworkMessages.md)
 
 Mirror supports a number of data types you can use with these, including:
-- Basic c# types (byte, int, char, uint, float, string, UInt64, etc)
+- Basic c# types (byte, int, char, uint, UInt64, float, string, etc)
 - Built-in Unity math type (Vector3, Quaternion, Rect, Plane, Vector3Int, etc)
+- URI
 - NetworkIdentity
 - Game object with a NetworkIdentity component attached.
 - Structures with any of the above (it's recommended to implement IEquatable\<T\> to avoid boxing and to have the struct readonly, cause modifying one of fields doesn't cause a resync)
+- Classes as long as each field has a supported data type.
+- ScriptableObject as long as each field has a supported data type
 - Arrays of any of the above (not supported with syncvars or synclists)
 - ArraySegments of any of the above (not supported with syncvars or synclists)
 
 ## Custom Data Types
+
+[![built in data types video tutorial](../images/video_tutorial.png)](https://www.youtube.com/watch?v=svXHy2TGaS8&list=PLkx8oFug638oBYF5EOwsSS-gOVBXj1dkP&index=10)
 
 Sometimes you don't want mirror to generate serialization for your own types. For example, instead of serializing quest data, you may want to serialize just the quest id, and the receiver can look up the quest by id in a predefined list.
 
@@ -36,7 +43,7 @@ public static class DateTimeReaderWriter
 
 ...then you can use `DateTime` in your `[Command]` or `SyncList`
 
-## Polymorphism
+## Inheritance and Polymorphism
 
 Sometimes you might want to send a polymorphic data type to your commands. Mirror does not serialize the type name to keep messages small and for security reasons, therefore Mirror cannot figure out the type of object it received by looking at the message.
 
@@ -45,7 +52,7 @@ Sometimes you might want to send a polymorphic data type to your commands. Mirro
 ```cs
 class Item 
 {
-    public String name;
+    public string name;
 }
 
 class Weapon : Item
@@ -62,8 +69,10 @@ class Armor : Item
 class Player : NetworkBehaviour
 {
     [Command]
-    public void CmdEquip(Item item)
+    void CmdEquip(Item item)
     {
+        // IMPORTANT: this does not work. Mirror will pass you an object of type item
+        // even if you pass a weapon or an armor.
         if (item is Weapon weapon)
         {
             // The item is a weapon, 
@@ -75,34 +84,16 @@ class Player : NetworkBehaviour
         }
     }
 
-    public OnGUI()
+    [Command]
+    void CmdEquipArmor(Armor armor)
     {
-        if (isLocalPlayer)
-        {
-            if (GUI.Button(new Rect(10, 10, 50, 50), "Equip Weapon"))
-            {
-                CmdEquip(new Weapon() 
-                {
-                    name = "Excalibur",
-                    hitPoints= 100
-                });
-            }
-
-            if (GUI.Button(new Rect(10, 70, 50, 30), "Equip Armor"))
-            {
-                CmdEquip(new Armor() 
-                {
-                    name = "Gold Armor",
-                    hitPoints= 100,
-                    Level = 3
-                });
-            }
-        }
+        // IMPORTANT: this does not work either,  you will receive an armor,  but 
+        // the armor will not have a valid Item.name,  even if you passed an armor with name
     }
 }
 ```
 
-The above code works if you provide a custom serializer for the `Item` type. For example:
+CmdEquip will work if you provide a custom serializer for the `Item` type. For example:
 
 ```cs
 
@@ -143,7 +134,8 @@ public static class ItemSerializer
                 return new Armor
                 {
                     name = reader.ReadString(),
-                    hitPoints = reader.ReadPackedInt32()
+                    hitPoints = reader.ReadPackedInt32(),
+                    level = reader.ReadPackedInt32()
                 };
             default:
                 throw new Exception($"Invalid weapon type {type}");
@@ -152,22 +144,38 @@ public static class ItemSerializer
 }
 ```
 
-## Inheritance
+## Scriptable Objects
 
-Data types do not support inheritance yet:
+People often want to send scriptable objects from the client or server. For example, you may have a bunch of swords created as scriptable objects and you want put the equipped sword in a syncvar. This will work fine, Mirror will generate a reader and writer for scriptable objects by calling ScriptableObject.CreateInstance and copy all the data. 
 
->   **This does not work out of the box.**
+However the generated reader and writer are not suitable for every occasion. Scriptable objects often reference other assets such as textures, prefabs, or other types that can't be serialized. Scriptable objects are often saved in the in the Resources folder. Scriptable objects sometimes have a large amount of data in them. The generated reader and writers may not work or may be inneficient for these situations.
+
+Instead of passing the scriptable object data,  you can pass the name and the other side can lookup the same object by name. This way you can have any kind of data in your scriptable object. You can do that by providing a custom reader and writer.  Here is an example:
 
 ```cs
-class Player : NetworkBehaviour
+[CreateAssetMenu(fileName = "New Armor", menuName = "Armor Data")]
+class Armor : ScriptableObject
 {
-    [Command]
-    public void CmdEquip(Armor armor)
+    public int Hitpoints;
+    public int Weight;
+    public string Description;
+    public Texture2D Icon;
+    // ...
+}
+
+public static class ArmorSerializer 
+{
+    public static void WriteArmor(this NetworkWriter writer, Armor armor)
     {
-        // Mirror will give you an armor object, 
-        // but the fields in Armor's parent class will be null.
+       // no need to serialize the data, just the name of the armor
+       writer.WriteString(armor.name);
+    }
+
+    public static Armor ReadArmor(this NetworkReader reader)
+    {
+        // load the same armor by name.  The data will come from the asset in Resources folder
+        return Resources.Load<Armor>(reader.ReadString());
     }
 }
 ```
 
-However, you can get it to work if you provide a custom serializer for Armor.

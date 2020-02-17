@@ -6,21 +6,9 @@ Certain features of Unity Networking were removed from Mirror for various reason
 
 As part of the Unity Services, this entire namespace was removed. It didn't work well to begin with, and was incredibly complex to be part of the core networking package. We expect this, along with other back-end services, will be provided through standalone apps that have integration to Mirror.
 
-## Network Discovery
-
-<<<<<<< HEAD:doc/articles/General/Deprecations.md
-NetworkDiscovery was a UNet component intended for UDP projects.  Since Mirror was built on TCP, it was removed.  Now that all [transports](../Transports/index.md) are separate components, Discovery has been reimplemented in at least one of them.
-
-## networkPort in Network Manager
-
-Network Manager's `networkPort` property was removed now that all transports are separate components.  Not all transports use ports, but those that do have a field for it.  See [Transports](../Transports/index.md) for more info.
-=======
-NetworkDiscovery was a UNet component intended for UDP projects. Since Mirror was built on TCP, it was removed. Now that all [transports](../Transports/index.md) are separate components, Discovery has been re-implemented in at least one of them.
-
 ## networkPort in Network Manager
 
 Network Manager's `networkPort` property was removed now that all transports are separate components. Not all transports use ports, but those that do have a field for it. See [Transports](../Transports/index.md) for more info.
->>>>>>> master:doc/General/Deprecations.md
 
 ## playerController in NetworkConnection
 
