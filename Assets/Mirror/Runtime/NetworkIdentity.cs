@@ -121,8 +121,8 @@ namespace Mirror
         /// </summary>
         public NetworkConnection connectionToServer { get; internal set; }
 
+        NetworkConnectionToClient _connectionToClient;
 
-        private NetworkConnectionToClient _connectionToClient;
         /// <summary>
         /// The NetworkConnection associated with this <see cref="NetworkIdentity">NetworkIdentity.</see> This is valid for player and other owned objects in the server.
         /// <para>Use it to return details such as the connection&apos;s identity, IP address and ready status.</para>
@@ -574,7 +574,7 @@ namespace Mirror
             }
         }
 
-        private static NetworkIdentity previousLocalPlayer = null;
+        static NetworkIdentity previousLocalPlayer = null;
         internal void OnStartLocalPlayer()
         {
             if (previousLocalPlayer == this)
@@ -971,6 +971,43 @@ namespace Mirror
             conn.AddToVisList(this);
         }
 
+        // helper function to call OnRebuildObservers in all components
+        // -> HashSet is passed in so we can cache it!
+        // -> returns true if any of the components implemented
+        //    OnRebuildObservers, false otherwise
+        // -> initialize is true on first rebuild, false on consecutive rebuilds
+        internal bool GetNewObservers(HashSet<NetworkConnection> observersSet, bool initialize)
+        {
+            bool rebuildOverwritten = false;
+            observersSet.Clear();
+
+            foreach (NetworkBehaviour comp in NetworkBehaviours)
+            {
+                rebuildOverwritten |= comp.OnRebuildObservers(observersSet, initialize);
+            }
+
+            return rebuildOverwritten;
+        }
+
+        // helper function to add all server connections as observers.
+        // this is used if none of the components provides their own
+        // OnRebuildObservers function.
+        internal void AddAllReadyServerConnectionsToObservers()
+        {
+            // add all server connections
+            foreach (NetworkConnection conn in NetworkServer.connections.Values)
+            {
+                if (conn.isReady)
+                    AddObserver(conn);
+            }
+
+            // add local host connection (if any)
+            if (NetworkServer.localConnection != null && NetworkServer.localConnection.isReady)
+            {
+                AddObserver(NetworkServer.localConnection);
+            }
+        }
+
         static readonly HashSet<NetworkConnection> newObservers = new HashSet<NetworkConnection>();
 
         /// <summary>
@@ -979,19 +1016,14 @@ namespace Mirror
         /// <param name="initialize">True if this is the first time.</param>
         public void RebuildObservers(bool initialize)
         {
+            // observers are null until OnStartServer creates them
             if (observers == null)
                 return;
 
             bool changed = false;
-            bool result = false;
 
-            newObservers.Clear();
-
-            // call OnRebuildObservers function in components
-            foreach (NetworkBehaviour comp in NetworkBehaviours)
-            {
-                result |= comp.OnRebuildObservers(newObservers, initialize);
-            }
+            // call OnRebuildObservers function in all components
+            bool rebuildOverwritten = GetNewObservers(newObservers, initialize);
 
             // if player connection: ensure player always see himself no matter what.
             // -> fixes https://github.com/vis2k/Mirror/issues/692 where a
@@ -1003,48 +1035,36 @@ namespace Mirror
             }
 
             // if no component implemented OnRebuildObservers, then add all
-            // connections.
-            if (!result)
+            // server connections.
+            if (!rebuildOverwritten)
             {
+                // only add all connections when rebuilding the first time.
+                // second time we just keep them without rebuilding anything.
                 if (initialize)
                 {
-                    foreach (NetworkConnection conn in NetworkServer.connections.Values)
-                    {
-                        if (conn.isReady)
-                            AddObserver(conn);
-                    }
-
-                    if (NetworkServer.localConnection != null && NetworkServer.localConnection.isReady)
-                    {
-                        AddObserver(NetworkServer.localConnection);
-                    }
+                    AddAllReadyServerConnectionsToObservers();
                 }
                 return;
             }
 
-            // apply changes from rebuild
+            // add all newObservers that aren't in .observers yet
             foreach (NetworkConnection conn in newObservers)
             {
-                if (conn == null)
+                // only add ready connections.
+                // otherwise the player might not be in the world yet or anymore
+                if (conn != null && conn.isReady)
                 {
-                    continue;
-                }
-
-                if (!conn.isReady)
-                {
-                    if (LogFilter.Debug) Debug.Log("Observer is not ready for " + gameObject + " " + conn);
-                    continue;
-                }
-
-                if (initialize || !observers.ContainsKey(conn.connectionId))
-                {
-                    // new observer
-                    conn.AddToVisList(this);
-                    if (LogFilter.Debug) Debug.Log("New Observer for " + gameObject + " " + conn);
-                    changed = true;
+                    if (initialize || !observers.ContainsKey(conn.connectionId))
+                    {
+                        // new observer
+                        conn.AddToVisList(this);
+                        if (LogFilter.Debug) Debug.Log("New Observer for " + gameObject + " " + conn);
+                        changed = true;
+                    }
                 }
             }
 
+            // remove all old .observers that aren't in newObservers anymore
             foreach (NetworkConnection conn in observers.Values)
             {
                 if (!newObservers.Contains(conn))
@@ -1053,6 +1073,16 @@ namespace Mirror
                     conn.RemoveFromVisList(this, false);
                     if (LogFilter.Debug) Debug.Log("Removed Observer for " + gameObject + " " + conn);
                     changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                observers.Clear();
+                foreach (NetworkConnection conn in newObservers)
+                {
+                    if (conn != null && conn.isReady)
+                        observers.Add(conn.connectionId, conn);
                 }
             }
 
@@ -1084,16 +1114,6 @@ namespace Mirror
                     OnSetHostVisibility(false);
                 }
             }
-
-            if (changed)
-            {
-                observers.Clear();
-                foreach (NetworkConnection conn in newObservers)
-                {
-                    if (conn.isReady)
-                        observers.Add(conn.connectionId, conn);
-                }
-            }
         }
 
         /// <summary>
@@ -1111,15 +1131,15 @@ namespace Mirror
                 return false;
             }
 
-            if (connectionToClient != null && conn != connectionToClient)
-            {
-                Debug.LogError("AssignClientAuthority for " + gameObject + " already has an owner. Use RemoveClientAuthority() first.");
-                return false;
-            }
-
             if (conn == null)
             {
                 Debug.LogError("AssignClientAuthority for " + gameObject + " owner cannot be null. Use RemoveClientAuthority() instead.");
+                return false;
+            }
+
+            if (connectionToClient != null && conn != connectionToClient)
+            {
+                Debug.LogError("AssignClientAuthority for " + gameObject + " already has an owner. Use RemoveClientAuthority() first.");
                 return false;
             }
 
@@ -1156,7 +1176,7 @@ namespace Mirror
         {
             if (!isServer)
             {
-                Debug.LogError("RemoveClientAuthority can only be call on the server for spawned objects.");
+                Debug.LogError("RemoveClientAuthority can only be called on the server for spawned objects.");
                 return;
             }
 
@@ -1215,7 +1235,7 @@ namespace Mirror
         static UpdateVarsMessage varsMessage = new UpdateVarsMessage();
 
         // invoked by NetworkServer during Update()
-        internal void MirrorUpdate()
+        internal void ServerUpdate()
         {
             if (observers != null && observers.Count > 0)
             {
@@ -1262,7 +1282,8 @@ namespace Mirror
             }
             else
             {
-                // clear all component's dirty bits
+                // clear all component's dirty bits.
+                // it would be spawned on new observers anyway.
                 ClearAllComponentsDirtyBits();
             }
         }
