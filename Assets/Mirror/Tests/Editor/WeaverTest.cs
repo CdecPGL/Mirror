@@ -1,12 +1,16 @@
 //#define LOG_WEAVER_OUTPUTS
 
 using System.Collections.Generic;
-using NUnit.Framework;
+using System.Linq;
 using Mirror.Weaver;
+using Mono.CecilX;
+using Mono.CecilX.Cil;
+using NUnit.Framework;
 
 namespace Mirror.Tests
 {
     [TestFixture]
+    [Category("Weaver")]
     public class WeaverTest
     {
         #region Private
@@ -78,12 +82,6 @@ namespace Mirror.Tests
         #endregion
 
         #region General tests
-        [Test]
-        public void InvalidType()
-        {
-            Assert.That(CompilationFinishedHook.WeaveFailed, Is.True);
-            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: System.AccessViolationException MirrorTest.MirrorTestPlayer/MyStruct::violatedPotato has unsupported type. Use a type supported by Mirror instead"));
-        }
 
         [Test]
         public void RecursionCount()
@@ -92,36 +90,6 @@ namespace Mirror.Tests
             Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: MirrorTest.MirrorTestPlayer/Potato1 can't be serialized because it references itself"));
         }
 
-        [Test]
-        public void ClientGuardWrongClass()
-        {
-            Assert.That(CompilationFinishedHook.WeaveFailed, Is.True);
-            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: [Client] System.Void MirrorTest.MirrorTestPlayer::CantClientGuardInThisClass() must be declared in a NetworkBehaviour"));
-        }
-
-        [Test]
-        public void ServerGuardWrongClass()
-        {
-            Assert.That(CompilationFinishedHook.WeaveFailed, Is.True);
-            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: [Server] System.Void MirrorTest.MirrorTestPlayer::CantServerGuardInThisClass() must be declared in a NetworkBehaviour"));
-        }
-
-        [Test]
-        public void GuardCmdWrongClass()
-        {
-            Assert.That(CompilationFinishedHook.WeaveFailed, Is.True);
-            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: [Server] System.Void MirrorTest.MirrorTestPlayer::CantServerGuardInThisClass() must be declared in a NetworkBehaviour"));
-            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: [Server] System.Void MirrorTest.MirrorTestPlayer::CantServerCallbackGuardInThisClass() must be declared in a NetworkBehaviour"));
-            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: [Client] System.Void MirrorTest.MirrorTestPlayer::CantClientGuardInThisClass() must be declared in a NetworkBehaviour"));
-            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: [Client] System.Void MirrorTest.MirrorTestPlayer::CantClientCallbackGuardInThisClass() must be declared in a NetworkBehaviour"));
-        }
-
-        [Test]
-        public void JaggedArray()
-        {
-            Assert.That(CompilationFinishedHook.WeaveFailed, Is.True);
-            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: System.Int32[][] is an unsupported type. Jagged and multidimensional arrays are not supported"));
-        }
         #endregion
 
         #region SyncVar tests
@@ -243,43 +211,6 @@ namespace Mirror.Tests
 
         #endregion
 
-        #region SyncListStruct tests
-        [Test]
-        public void SyncListStructValid()
-        {
-            Assert.That(CompilationFinishedHook.WeaveFailed, Is.False);
-            Assert.That(weaverErrors, Is.Empty);
-        }
-
-        [Test]
-        public void SyncListStructGenericGeneric()
-        {
-            Assert.That(CompilationFinishedHook.WeaveFailed, Is.True);
-            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: MirrorTest.MirrorTestPlayer/MyStructClass cannot have generic elements MirrorTest.MirrorTestPlayer/MyGenericStruct`1<System.Single>"));
-        }
-
-        [Test]
-        public void SyncListStructMemberGeneric()
-        {
-            Assert.That(CompilationFinishedHook.WeaveFailed, Is.True);
-            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: Cannot generate writer for generic type MirrorTest.MirrorTestPlayer/MyGenericStruct`1<System.Single>. Use a concrete type or provide a custom writer"));
-        }
-
-        [Test]
-        public void SyncListStructMemberInterface()
-        {
-            Assert.That(CompilationFinishedHook.WeaveFailed, Is.True);
-            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: Cannot generate writer for interface MirrorTest.MirrorTestPlayer/IPotato. Use a concrete type or provide a custom writer"));
-        }
-
-        [Test]
-        public void SyncListStructMemberBasicType()
-        {
-            Assert.That(CompilationFinishedHook.WeaveFailed, Is.True);
-            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: MirrorTest.MirrorTestPlayer/MyStructClass cannot have item of type MirrorTest.MirrorTestPlayer/MyStruct.  Use a type supported by mirror instead"));
-        }
-        #endregion
-
         #region NetworkBehaviour tests
         [Test]
         public void NetworkBehaviourValid()
@@ -369,7 +300,7 @@ namespace Mirror.Tests
         public void NetworkBehaviourTargetRpcParamAbstract()
         {
             Assert.That(CompilationFinishedHook.WeaveFailed, Is.True);
-            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: MirrorTest.MirrorTestPlayer/AbstractClass can't be deserialized bcause i has no default constructor"));
+            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: MirrorTest.MirrorTestPlayer/AbstractClass can't be deserialized because i has no default constructor"));
         }
 
         [Test]
@@ -439,7 +370,7 @@ namespace Mirror.Tests
         public void NetworkBehaviourClientRpcParamAbstract()
         {
             Assert.That(CompilationFinishedHook.WeaveFailed, Is.True);
-            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: MirrorTest.MirrorTestPlayer/AbstractClass can't be deserialized bcause i has no default constructor"));
+            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: MirrorTest.MirrorTestPlayer/AbstractClass can't be deserialized because i has no default constructor"));
         }
 
         [Test]
@@ -488,7 +419,7 @@ namespace Mirror.Tests
         public void NetworkBehaviourCmdParamAbstract()
         {
             Assert.That(CompilationFinishedHook.WeaveFailed, Is.True);
-            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: MirrorTest.MirrorTestPlayer/AbstractClass can't be deserialized bcause i has no default constructor"));
+            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: MirrorTest.MirrorTestPlayer/AbstractClass can't be deserialized because i has no default constructor"));
         }
 
         [Test]
@@ -540,8 +471,8 @@ namespace Mirror.Tests
         [Test]
         public void ClientRpcValid()
         {
-            Assert.That(CompilationFinishedHook.WeaveFailed, Is.False);
             Assert.That(weaverErrors, Is.Empty);
+            Assert.That(CompilationFinishedHook.WeaveFailed, Is.False);
         }
 
         [Test]
@@ -638,7 +569,7 @@ namespace Mirror.Tests
         public void MonoBehaviourClientRpc()
         {
             Assert.That(CompilationFinishedHook.WeaveFailed, Is.True);
-            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: [ClienRpc] System.Void MirrorTest.MirrorTestPlayer::RpcThisCantBeOutsideNetworkBehaviour() must be declared inside a NetworkBehaviour"));
+            Assert.That(weaverErrors, Contains.Item("Mirror.Weaver error: [ClientRpc] System.Void MirrorTest.MirrorTestPlayer::RpcThisCantBeOutsideNetworkBehaviour() must be declared inside a NetworkBehaviour"));
         }
 
         [Test]
@@ -722,10 +653,63 @@ namespace Mirror.Tests
         }
         #endregion
 
-         [Test]
+        #region Server Client Attribute Tests 
+        [Test]
+        public void NetworkBehaviourServer()
+        {
+            Assert.That(CompilationFinishedHook.WeaveFailed, Is.False);
+            Assert.That(weaverErrors, Is.Empty);
+            CheckAddedCodeServer();
+        }
+
+        [Test]
+        public void NetworkBehaviourClient()
+        {
+            Assert.That(CompilationFinishedHook.WeaveFailed, Is.False);
+            Assert.That(weaverErrors, Is.Empty);
+            CheckAddedCodeClient();
+        }
+
+        static void CheckAddedCodeServer()
+        {
+            string networkServerGetActive = Weaver.Weaver.NetworkServerGetActive.ToString();
+            CheckAddedCode(networkServerGetActive, "ServerOnlyMethod");
+        }
+
+        static void CheckAddedCodeClient()
+        {
+            string networkClientGetActive = Weaver.Weaver.NetworkClientGetActive.ToString();
+            CheckAddedCode(networkClientGetActive, "ClientOnlyMethod");
+        }
+
+        /// <summary>
+        /// Checks that first Instructions in MethodBody is addedString
+        /// </summary>
+        /// <param name="addedString"></param>
+        /// <param name="methodName"></param>
+        static void CheckAddedCode(string addedString, string methodName)
+        {
+            string className = "MirrorTest.MirrorTestPlayer";
+
+            string assemblyName = WeaverAssembler.OutputDirectory + WeaverAssembler.OutputFile;
+            using (AssemblyDefinition assembly = AssemblyDefinition.ReadAssembly(assemblyName))
+            {
+                TypeDefinition type = assembly.MainModule.GetType(className);
+                MethodDefinition method = type.Methods.First(m => m.Name == methodName);
+                MethodBody body = method.Body;
+
+                Instruction top = body.Instructions[0];
+
+                Assert.AreEqual(top.OpCode, OpCodes.Call);
+                Assert.AreEqual(top.Operand.ToString(), addedString);
+            }
+        }
+        #endregion
+
+        [Test]
         public void TestingScriptableObjectArraySerialization()
         {
-            UnityEngine.Debug.Log(string.Join("\n",weaverErrors));
+            UnityEngine.Debug.Log(string.Join("\n", weaverErrors));
             Assert.That(CompilationFinishedHook.WeaveFailed, Is.False);
         }
     }

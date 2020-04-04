@@ -35,6 +35,11 @@ dotnet_style_parentheses_in_other_operators = never_if_unnecessary:silent
 # Modifier preferences 
 dotnet_style_require_accessibility_modifiers = for_non_interface_members:silent 
 dotnet_style_readonly_field = true:suggestion 
+
+# Code-block preferences
+csharp_prefer_braces = when_multiline:suggestion
+csharp_prefer_simple_using_statement = false:suggestion
+
 # Expression-level preferences 
 dotnet_style_object_initializer = true:suggestion 
 dotnet_style_collection_initializer = true:suggestion 
@@ -59,6 +64,12 @@ dotnet_naming_rule.constant_fields_should_be_pascal_case.style = pascal_case_sty
 dotnet_naming_symbols.constant_fields.applicable_kinds = field 
 dotnet_naming_symbols.constant_fields.applicable_accessibilities = * 
 dotnet_naming_symbols.constant_fields.required_modifiers = const 
+dotnet_naming_rule.method_should_be_pascal_case.severity = suggestion
+dotnet_naming_rule.method_should_be_pascal_case.symbols = method
+dotnet_naming_rule.method_should_be_pascal_case.style = pascal_case_style
+dotnet_naming_symbols.method.applicable_kinds = method
+dotnet_naming_symbols.method.applicable_accessibilities = *
+dotnet_naming_symbols.method.required_modifiers = 
 ############################### 
 # C# Coding Conventions       # 
 ############################### 

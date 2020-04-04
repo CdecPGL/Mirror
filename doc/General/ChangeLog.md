@@ -4,7 +4,29 @@
 
 Mirror uses semantic versioning, and the versions shown here are those that were published to the Asset Store, and occasionally major version bumps happen mid-month between store submissions and are therefore not individually shown here.
 
-## Version 10.x.x - In Progress
+## Version 11.4.2 - 2020-Apr-03
+- Added: SyncVar hooks can be virtual now, and overriden in a derived class.
+- Added: Virtual OnRoomStopServer to NetworkRoomManager and Script Template
+- Added: 10K Networked Objects Benchmark Example
+- Fixed: Setting breakpoints in an IDE for Command's and Rpc's work correctly now.
+- Fixed: NetworkServer's calls to SendToObservers now reports correct channel to Mirror Profiler.
+- Fixed: NetworkRoomManager's `roomPlayerPrefab` is now `protected` so it can be accessed in derived classes.
+- Fixed: NetworkRoomPlayer inspector and documentation updated to be less confusing.
+- Fixed: NetworkIdentity no longer double calls NetworkServer.Destroy.
+- Fixed: NetworkAnimator now correctly excludes parameters controlled by curves.
+- Fixed: NetworkBehaviour now uses a property drawer for the SyncVar label so it displays better.
+- Fixed: NetworkServer.SendToReady overloads are no longer ambiguous.
+- Fixed: NetworkRoomManager no longer incorrectly destroys the game player object. It's left in the game scene to be cleaned up by Unity when the scene changes.
+- Fixed: StopHost correctly raises OnServerDisconnect in Network Manager, and correctly unwinds before shutting down the server.
+- Fixed: `isServer` is no longer incorrectly false on server in Network Identity's OnDestroy
+- Changed: Network Manager HUD now calls StopHost / StopServer / StopClient more appropriately.
+- Changed: Network Manager HUD labels no longer say LAN. Associated docs also cleaned up to eliminate the misconception of Mirror being LAN only solution.
+- Changed: NetworkTransform compression removed and message handling is much simpler now.
+- Changed: NetworkSceneChecker initializes in Awake again because OnEnable proved to be unreliable in some cases.
+- Changed: Network Manager will no longer lose references to scenes if they aren't in the Build Settings scene list, however moving or renaming scenes may cause references to be lost.
+- Changed: **Breaking** Many obsolete methods and properties removed. Use version 10 first if upgrading from UNet or older Mirror. See [Deprecations](Deprecations.md) for complete list.
+
+## Version 10.4.7 - 2020-Mar-03
 - Added: Weaver will now block play mode and builds if there are weaver errors and show them in the console again.
 - Added: PooledNetworkReader and PooledNetworkWriter, both Disposable.
 - Added: NetworkReader.ReadMessage<T>.
@@ -16,8 +38,12 @@ Mirror uses semantic versioning, and the versions shown here are those that were
 - Fixed: NetworkAnimator and NetworkTransform now correctly check for client authority in their respective Command methods.
 - Fixed: Network Room Manager Script Template had a virtual method instead of an override.
 - Fixed: NetworkServer's calls to NetworkConnectionToClient.Send now includes the channelId parameter that was missing.
+- Fixed: NetworkServer's calls to SendToAll, SendToReady, and SendToObservers send to the exact connection if it is detected as local connection, instead of falling back to the .localConnection.
+- Fixed: NetworkServer.SpawnObjects returns false if server isn't running.
+- Fixed: NetworkTransform rotation detection improved.
+- Fixed: Weaver generated code now builds properly for IL2CPP (again).
 - Changed: StartHost in Network Manager is no longer a virtual method (and shoudn't have been). Override OnStartHost instead.
-- Changed: NetworkRoomManager's OnRoomServerSceneLoadedForPlayer now includes NetworkConnection parameter
+- Changed: NetworkRoomManager's OnRoomServerSceneLoadedForPlayer now includes NetworkConnection parameter.
 - Changed: NetworkSceneChecker now works from OnEnable instead of Awake, and uses Scene instead of scene name.
 - Changed: Renamed NeworkWriter.Write to WriteMessage for consistency.
 
