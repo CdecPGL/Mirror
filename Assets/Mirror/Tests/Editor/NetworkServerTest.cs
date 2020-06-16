@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using Mirror.RemoteCalls;
 using NSubstitute;
 using NUnit.Framework;
 using UnityEngine;
@@ -11,11 +12,13 @@ namespace Mirror.Tests
     {
         // counter to make sure that it's called exactly once
         public int called;
+        public NetworkConnection senderConnectionInCall;
         // weaver generates this from [Command]
         // but for tests we need to add it manually
-        public static void CommandGenerated(NetworkBehaviour comp, NetworkReader reader)
+        public static void CommandGenerated(NetworkBehaviour comp, NetworkReader reader, NetworkConnection senderConnection)
         {
             ++((CommandTestNetworkBehaviour)comp).called;
+            ((CommandTestNetworkBehaviour)comp).senderConnectionInCall = senderConnection;
         }
     }
 
@@ -25,7 +28,7 @@ namespace Mirror.Tests
         public int called;
         // weaver generates this from [Rpc]
         // but for tests we need to add it manually
-        public static void RpcGenerated(NetworkBehaviour comp, NetworkReader reader)
+        public static void RpcGenerated(NetworkBehaviour comp, NetworkReader reader, NetworkConnection senderConnection)
         {
             ++((RpcTestNetworkBehaviour)comp).called;
         }
@@ -37,7 +40,7 @@ namespace Mirror.Tests
         public int called;
         // weaver generates this from [SyncEvent]
         // but for tests we need to add it manually
-        public static void SyncEventGenerated(NetworkBehaviour comp, NetworkReader reader)
+        public static void SyncEventGenerated(NetworkBehaviour comp, NetworkReader reader, NetworkConnection senderConnection)
         {
             ++((SyncEventTestNetworkBehaviour)comp).called;
         }
@@ -54,7 +57,7 @@ namespace Mirror.Tests
     {
         // counter to make sure that it's called exactly once
         public int called;
-        public override void OnNetworkDestroy() { ++called; }
+        public override void OnStopClient() { ++called; }
     }
 
     [TestFixture]
@@ -69,10 +72,11 @@ namespace Mirror.Tests
         [TearDown]
         public void TearDown()
         {
-            Transport.activeTransport = null;
-
             // reset all state
+            // shutdown should be called before setting activeTransport to null
             NetworkServer.Shutdown();
+
+            Transport.activeTransport = null;
         }
 
         [Test]
@@ -104,9 +108,6 @@ namespace Mirror.Tests
             // connect second: should fail
             Transport.activeTransport.OnServerConnected.Invoke(43);
             Assert.That(NetworkServer.connections.Count, Is.EqualTo(1));
-
-            // shutdown
-            NetworkServer.Shutdown();
         }
 
         [Test]
@@ -125,9 +126,6 @@ namespace Mirror.Tests
             // connect
             Transport.activeTransport.OnServerConnected.Invoke(42);
             Assert.That(connectCalled, Is.True);
-
-            // shutdown
-            NetworkServer.Shutdown();
         }
 
         [Test]
@@ -150,9 +148,6 @@ namespace Mirror.Tests
             // disconnect
             Transport.activeTransport.OnServerDisconnected.Invoke(42);
             Assert.That(disconnectCalled, Is.True);
-
-            // shutdown
-            NetworkServer.Shutdown();
         }
 
         [Test]
@@ -185,9 +180,6 @@ namespace Mirror.Tests
             // disconnect first
             Transport.activeTransport.OnServerDisconnected.Invoke(42);
             Assert.That(NetworkServer.connections.Count, Is.EqualTo(0));
-
-            // shutdown
-            NetworkServer.Shutdown();
         }
 
         [Test]
@@ -216,9 +208,6 @@ namespace Mirror.Tests
             Transport.activeTransport.OnServerConnected.Invoke(-1);
             Assert.That(NetworkServer.connections.Count, Is.EqualTo(0));
             LogAssert.ignoreFailingMessages = false;
-
-            // shutdown
-            NetworkServer.Shutdown();
         }
 
         [Test]
@@ -242,9 +231,6 @@ namespace Mirror.Tests
             Transport.activeTransport.OnServerConnected.Invoke(42);
             Assert.That(NetworkServer.connections.Count, Is.EqualTo(1));
             Assert.That(NetworkServer.connections[42], Is.EqualTo(original));
-
-            // shutdown
-            NetworkServer.Shutdown();
         }
 
         [Test]
@@ -265,9 +251,6 @@ namespace Mirror.Tests
             NetworkServer.SetLocalConnection(overwrite);
             Assert.That(NetworkServer.localConnection, Is.EqualTo(localConnection));
             LogAssert.ignoreFailingMessages = false;
-
-            // shutdown
-            NetworkServer.Shutdown();
         }
 
         [Test]
@@ -288,9 +271,6 @@ namespace Mirror.Tests
             // remove local connection
             NetworkServer.RemoveLocalConnection();
             Assert.That(NetworkServer.localConnection, Is.Null);
-
-            // shutdown
-            NetworkServer.Shutdown();
         }
 
         [Test]
@@ -303,9 +283,6 @@ namespace Mirror.Tests
             // set local connection
             NetworkServer.SetLocalConnection(new ULocalConnectionToClient());
             Assert.That(NetworkServer.localClientActive, Is.True);
-
-            // shutdown
-            NetworkServer.Shutdown();
         }
 
         [Test]
@@ -347,9 +324,6 @@ namespace Mirror.Tests
             Assert.That(NetworkServer.connections[42], Is.EqualTo(conn42));
             Assert.That(NetworkServer.connections.ContainsKey(43), Is.True);
             Assert.That(NetworkServer.connections[43], Is.EqualTo(conn43));
-
-            // shutdown
-            NetworkServer.Shutdown();
         }
 
         [Test]
@@ -376,9 +350,6 @@ namespace Mirror.Tests
             bool resultRemove = NetworkServer.RemoveConnection(42);
             Assert.That(resultRemove, Is.True);
             Assert.That(NetworkServer.connections.Count, Is.EqualTo(0));
-
-            // shutdown
-            NetworkServer.Shutdown();
         }
 
         [Test]
@@ -401,9 +372,6 @@ namespace Mirror.Tests
             // disconnect all connections
             NetworkServer.DisconnectAllConnections();
             Assert.That(NetworkServer.connections.Count, Is.EqualTo(0));
-
-            // shutdown
-            NetworkServer.Shutdown();
         }
 
         [Test]
@@ -432,9 +400,6 @@ namespace Mirror.Tests
             NetworkServer.DisconnectAll();
             Assert.That(NetworkServer.connections.Count, Is.EqualTo(0));
             Assert.That(NetworkServer.localConnection, Is.Null);
-
-            // shutdown
-            NetworkServer.Shutdown();
         }
 
         [Test]
@@ -481,9 +446,6 @@ namespace Mirror.Tests
             Assert.That(wasReceived, Is.True);
             Assert.That(connectionReceived, Is.EqualTo(connection));
             Assert.That(messageReceived, Is.EqualTo(testMessage));
-
-            // shutdown
-            NetworkServer.Shutdown();
         }
 
         [Test]
@@ -524,9 +486,6 @@ namespace Mirror.Tests
             // message handler should never be called
             Assert.That(wasReceived, Is.False);
             Assert.That(connectionReceived, Is.Null);
-
-            // shutdown
-            NetworkServer.Shutdown();
         }
 
         [Test]
@@ -592,9 +551,6 @@ namespace Mirror.Tests
 
             // ready?
             Assert.That(connection.isReady, Is.True);
-
-            // shutdown
-            NetworkServer.Shutdown();
         }
 
         // this runs a command all the way:
@@ -627,7 +583,11 @@ namespace Mirror.Tests
             connection.identity = identity;
 
             // register the command delegate, otherwise it's not found
-            NetworkBehaviour.RegisterCommandDelegate(typeof(CommandTestNetworkBehaviour), nameof(CommandTestNetworkBehaviour.CommandGenerated), CommandTestNetworkBehaviour.CommandGenerated);
+            int registeredHash = RemoteCallHelper.RegisterDelegate(typeof(CommandTestNetworkBehaviour),
+                nameof(CommandTestNetworkBehaviour.CommandGenerated),
+                MirrorInvokeType.Command,
+                CommandTestNetworkBehaviour.CommandGenerated,
+                false);
 
             // identity needs to be in spawned dict, otherwise command handler
             // won't find it
@@ -637,7 +597,7 @@ namespace Mirror.Tests
             CommandMessage message = new CommandMessage
             {
                 componentIndex = 0,
-                functionHash = NetworkBehaviour.GetMethodHash(typeof(CommandTestNetworkBehaviour), nameof(CommandTestNetworkBehaviour.CommandGenerated)),
+                functionHash = RemoteCallHelper.GetMethodHash(typeof(CommandTestNetworkBehaviour), nameof(CommandTestNetworkBehaviour.CommandGenerated)),
                 netId = identity.netId,
                 payload = new ArraySegment<byte>(new byte[0])
             };
@@ -692,9 +652,8 @@ namespace Mirror.Tests
             Assert.That(comp1.called, Is.EqualTo(0));
 
             // clean up
-            NetworkBehaviour.ClearDelegates();
             NetworkIdentity.spawned.Clear();
-            NetworkBehaviour.ClearDelegates();
+            RemoteCallHelper.RemoveDelegate(registeredHash);
             NetworkServer.Shutdown();
             // destroy the test gameobject AFTER server was stopped.
             // otherwise isServer is true in OnDestroy, which means it would try
@@ -768,9 +727,6 @@ namespace Mirror.Tests
 
             // was it send to and handled by the connection?
             Assert.That(called, Is.EqualTo(1));
-
-            // clean up
-            NetworkServer.Shutdown();
         }
 
         [Test]
@@ -834,9 +790,6 @@ namespace Mirror.Tests
             LogAssert.ignoreFailingMessages = false;
             // still 1, not 2
             Assert.That(variant2Called, Is.EqualTo(1));
-
-            // clean up
-            NetworkServer.Shutdown();
         }
 
         [Test]
@@ -1076,6 +1029,8 @@ namespace Mirror.Tests
             NetworkServer.Shutdown();
             GameObject.DestroyImmediate(go);
             GameObject.DestroyImmediate(go2);
+            // need to clear spawned list as SpawnObjects adds items to that list
+            NetworkIdentity.spawned.Clear();
         }
 
         [Test]
@@ -1089,13 +1044,13 @@ namespace Mirror.Tests
             identity.sceneId = 42;
             // spawned objects are active
             go.SetActive(true);
-            Assert.That(identity.IsMarkedForReset(), Is.False);
+            identity.netId = 123;
 
             // unspawn
             NetworkServer.UnSpawn(go);
 
-            // it should have been marked for reset now
-            Assert.That(identity.IsMarkedForReset(), Is.True);
+            // it should have been reset now
+            Assert.That(identity.netId, Is.Zero);
 
             // clean up
             GameObject.DestroyImmediate(go);
@@ -1129,6 +1084,39 @@ namespace Mirror.Tests
             Assert.That(NetworkServer.active, Is.False);
             Assert.That(NetworkServer.localConnection, Is.Null);
             Assert.That(NetworkServer.localClientActive, Is.False);
+        }
+
+        [Test]
+        public void ResetTest()
+        {
+#pragma warning disable CS0618 // Type or member is obsolete
+            NetworkServer.Reset();
+#pragma warning restore CS0618 // Type or member is obsolete
+            Assert.That(NetworkServer.active, Is.False);
+        }
+
+        [Test]
+        [TestCase(nameof(NetworkServer.SendToAll))]
+        [TestCase(nameof(NetworkServer.SendToReady))]
+        public void SendCalledWhileNotActive_ShouldGiveWarning(string functionName)
+        {
+            LogAssert.Expect(LogType.Warning, $"Can not send using NetworkServer.{functionName}<T>(T msg) because NetworkServer is not active");
+            bool success;
+
+            switch (functionName)
+            {
+                case nameof(NetworkServer.SendToAll):
+                    success = NetworkServer.SendToAll(new NetworkPingMessage { });
+                    Assert.That(success, Is.False);
+                    break;
+                case nameof(NetworkServer.SendToReady):
+                    success = NetworkServer.SendToReady(new NetworkPingMessage { });
+                    Assert.That(success, Is.False);
+                    break;
+                default:
+                    Debug.LogError("Could not find function name");
+                    break;
+            }
         }
     }
 }

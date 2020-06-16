@@ -1,12 +1,12 @@
 # Spawning Game Objects
 
-In Mirror, you usually “spawn” (that is, create) new game objects with `Instantiate`. However, in the multiplayer High Level API, the word “spawn” means something more specific. In the server-authoritative model of the HLAPI, to “spawn” a game object on the server means that the game object is created on clients connected to the server, and is managed by the spawning system.
+In Unity, you usually “spawn” (that is, create) new game objects with `Instantiate`. However, in Mirror, the word “spawn” means something more specific. In the server-authoritative model of the Mirror, to “spawn” a game object on the server means that the game object is created on clients connected to the server, and is managed by the spawning system.
 
 Once the game object is spawned using this system, state updates are sent to clients whenever the game object changes on the server. When Mirror destroys the game object on the server, it also destroys it on the clients. The server manages spawned game objects alongside all other networked game objects, so that if another client joins the game later, the server can spawn the game objects on that client. These spawned game objects have a unique network instance ID called “netId” that is the same on the server and clients for each game object. The unique network instance ID is used to route messages set across the network to game objects, and to identify game objects.
 
 When the server spawns a game object with a Network Identity component, the game object spawned on the client has the same “state”. This means it is identical to the game object on the server; it has the same Transform, movement state, and (if Network Transform and SyncVars are used) synchronized variables. Therefore, client game objects are always up-to-date when Mirror creates them. This avoids issues such as game objects spawning at the wrong initial location, then reappearing at their correct position when a state update arrives.
 
-The Network Manager before trying to register it with the Network Manager.
+A game object Prefab must have a Network Identity component before trying to register it with the Network Manager.
 
 To register a Prefab with the Network Manager in the Editor, select the Network Manager game object, and in the Inspector, navigate to the Network Manager component. Click the triangle next to Spawn Info to open the settings, then under Registered Spawnable Prefabs, click the plus (+) button. Drag and drop Prefabs into the empty field to assign them to the list.
 
@@ -166,7 +166,7 @@ Because `OnStartLocalPlayer` is only called for the client’s local player game
 
 ## Spawning Game Objects with Client Authority
 
-To spawn game objects and assign authority of those game objects to a particular client, use `NetworkServer.SpawnWithClientAuthority`, which takes as an argument the `NetworkConnection` of the client that is to be made the authority.
+To spawn game objects and assign authority of those game objects to a particular client, use `NetworkServer.Spawn`, which takes as an argument the `NetworkConnection` of the client that is to be made the authority.
 
 For these game objects, the property `hasAuthority` is true on the client with authority, and `OnStartAuthority` is called on the client with authority. That client can issue commands for that game object. On other clients (and on the host), `hasAuthority` is false.
 
@@ -184,7 +184,7 @@ void SpawnTrees(NetworkConnection conn)
         Tree tree = treeGo.GetComponent<Tree>();
         tree.numLeaves = Random.Range(10,200);
         Debug.Log("Spawning leaf with leaf count " + tree.numLeaves);
-        NetworkServer.SpawnWithClientAuthority(treeGo, conn);
+        NetworkServer.Spawn(treeGo, conn);
     }
 }
 ```
