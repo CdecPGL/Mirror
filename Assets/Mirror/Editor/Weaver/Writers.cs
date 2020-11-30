@@ -17,12 +17,18 @@ namespace Mirror.Weaver
 
         public static void Register(TypeReference dataType, MethodReference methodReference)
         {
-            writeFuncs[dataType.FullName] = methodReference;
+            string typeName = dataType.FullName;
+            if (writeFuncs.ContainsKey(typeName))
+            {
+                Weaver.Warning($"Registering a Write method for {typeName} when one already exists", methodReference);
+            }
+
+            writeFuncs[typeName] = methodReference;
         }
 
         static void RegisterWriteFunc(TypeReference typeReference, MethodDefinition newWriterFunc)
         {
-            writeFuncs[typeReference.FullName] = newWriterFunc;
+            Register(typeReference, newWriterFunc);
 
             Weaver.WeaveLists.generateContainerClass.Methods.Add(newWriterFunc);
         }
@@ -32,7 +38,6 @@ namespace Mirror.Weaver
         /// <para>This method is recursive</para>
         /// </summary>
         /// <param name="variable"></param>
-        /// <param name="recursionCount"></param>
         /// <returns>Returns <see cref="MethodReference"/> or null</returns>
         public static MethodReference GetWriteFunc(TypeReference variable)
         {
@@ -45,7 +50,8 @@ namespace Mirror.Weaver
                 // this try/catch will be removed in future PR and make `GetWriteFunc` throw instead
                 try
                 {
-                    return GenerateWriter(variable);
+                    TypeReference importedVariable = Weaver.CurrentAssembly.MainModule.ImportReference(variable);
+                    return GenerateWriter(importedVariable);
                 }
                 catch (GenerateWriterException e)
                 {
@@ -160,7 +166,7 @@ namespace Mirror.Weaver
                     WeaverTypes.Import(typeof(void)));
 
             writerFunc.Parameters.Add(new ParameterDefinition("writer", ParameterAttributes.None, WeaverTypes.Import<NetworkWriter>()));
-            writerFunc.Parameters.Add(new ParameterDefinition("value", ParameterAttributes.None, Weaver.CurrentAssembly.MainModule.ImportReference(variable)));
+            writerFunc.Parameters.Add(new ParameterDefinition("value", ParameterAttributes.None, variable));
             writerFunc.Body.InitLocals = true;
 
             RegisterWriteFunc(variable, writerFunc);

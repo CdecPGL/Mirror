@@ -17,16 +17,43 @@ namespace Mirror.Weaver
 
         internal static void Register(TypeReference dataType, MethodReference methodReference)
         {
+            string typeName = dataType.FullName;
+            if (readFuncs.ContainsKey(typeName))
+            {
+                Weaver.Warning($"Registering a Read method for {typeName} when one already exists", methodReference);
+            }
+
             readFuncs[dataType.FullName] = methodReference;
         }
 
-        public static MethodReference GetReadFunc(TypeReference variableReference)
+        static void RegisterReadFunc(TypeReference typeReference, MethodDefinition newReaderFunc)
         {
-            if (readFuncs.TryGetValue(variableReference.FullName, out MethodReference foundFunc))
+            Register(typeReference, newReaderFunc);
+
+            Weaver.WeaveLists.generateContainerClass.Methods.Add(newReaderFunc);
+        }
+
+        /// <summary>
+        /// Finds existing reader for type, if non exists trys to create one
+        /// <para>This method is recursive</para>
+        /// </summary>
+        /// <param name="variable"></param>
+        /// <returns>Returns <see cref="MethodReference"/> or null</returns>
+        public static MethodReference GetReadFunc(TypeReference variable)
+        {
+            if (readFuncs.TryGetValue(variable.FullName, out MethodReference foundFunc))
             {
                 return foundFunc;
             }
+            else
+            {
+                TypeReference importedVariable = Weaver.CurrentAssembly.MainModule.ImportReference(variable);
+                return GenerateReader(importedVariable);
+            }
+        }
 
+        private static MethodReference GenerateReader(TypeReference variableReference)
+        {
             // Arrays are special,  if we resolve them, we get teh element type,
             // so the following ifs might choke on it for scriptable objects
             // or other objects that require a custom serializer
@@ -104,13 +131,6 @@ namespace Mirror.Weaver
             return GenerateClassOrStructReadFunction(variableReference);
         }
 
-        static void RegisterReadFunc(TypeReference typeReference, MethodDefinition newReaderFunc)
-        {
-            readFuncs[typeReference.FullName] = newReaderFunc;
-
-            Weaver.WeaveLists.generateContainerClass.Methods.Add(newReaderFunc);
-        }
-
         static MethodDefinition GenerateEnumReadFunc(TypeReference variable)
         {
             MethodDefinition readerFunc = GenerateReaderFunction(variable);
@@ -156,7 +176,7 @@ namespace Mirror.Weaver
                     MethodAttributes.Public |
                     MethodAttributes.Static |
                     MethodAttributes.HideBySig,
-                    Weaver.CurrentAssembly.MainModule.ImportReference(variable));
+                    variable);
 
             readerFunc.Parameters.Add(new ParameterDefinition("reader", ParameterAttributes.None, WeaverTypes.Import<NetworkReader>()));
             readerFunc.Body.InitLocals = true;
@@ -269,7 +289,6 @@ namespace Mirror.Weaver
                 // mismatched ldloca/ldloc for struct/class combinations is invalid IL, which causes crash at runtime
                 OpCode opcode = variable.IsValueType ? OpCodes.Ldloca : OpCodes.Ldloc;
                 worker.Append(worker.Create(opcode, 0));
-
                 MethodReference readFunc = GetReadFunc(field.FieldType);
                 if (readFunc != null)
                 {
