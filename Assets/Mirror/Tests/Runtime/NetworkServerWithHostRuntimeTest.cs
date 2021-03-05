@@ -55,7 +55,7 @@ namespace Mirror.Tests.Runtime
             GameObject remotePlayer = new GameObject("RemotePlayer", typeof(NetworkIdentity));
             const int remoteConnectionId = 1;
             const int localConnectionId = 0;
-            NetworkConnectionToClient remoteConnection = new NetworkConnectionToClient(remoteConnectionId);
+            NetworkConnectionToClient remoteConnection = new NetworkConnectionToClient(remoteConnectionId, false, 0);
             NetworkServer.OnConnected(remoteConnection);
             NetworkServer.AddPlayerForConnection(remoteConnection, remotePlayer);
 
@@ -69,7 +69,7 @@ namespace Mirror.Tests.Runtime
             while (Time.time < endTime)
             {
                 yield return null;
-                NetworkServer.Update();
+                NetworkServer.NetworkLateUpdate();
             }
 
             // host client connection should still be alive

@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using UnityEditor;
 using UnityEditor.Compilation;
 using UnityEngine;
 
@@ -16,27 +15,18 @@ namespace Mirror.Weaver.Tests
             {
                 if (string.IsNullOrEmpty(_outputDirectory))
                 {
-                    string[] guidsFound = AssetDatabase.FindAssets($"t:Script " + nameof(WeaverAssembler));
-                    if (guidsFound.Length == 1 && !string.IsNullOrEmpty(guidsFound[0]))
-                    {
-                        string path = AssetDatabase.GUIDToAssetPath(guidsFound[0]);
-                        _outputDirectory = Path.GetDirectoryName(path);
-                    }
-                    else
-                    {
-                        Debug.LogError("Could not find WeaverAssembler for Weaver Tests");
-                    }
+                    _outputDirectory = EditorHelper.FindPath<WeaverAssembler>();
                 }
                 return _outputDirectory;
             }
         }
-        public static string OutputFile { get; set; }
+        public static string OutputFile;
         public static HashSet<string> SourceFiles { get; private set; }
         public static HashSet<string> ReferenceAssemblies { get; private set; }
-        public static bool AllowUnsafe { get; set; }
+        public static bool AllowUnsafe;
         public static List<CompilerMessage> CompilerMessages { get; private set; }
         public static bool CompilerErrors { get; private set; }
-        public static bool DeleteOutputOnClear { get; set; }
+        public static bool DeleteOutputOnClear;
 
         // static constructor to initialize static properties
         static WeaverAssembler()
@@ -120,21 +110,21 @@ namespace Mirror.Weaver.Tests
                 File.Delete(projPathFile);
 
             }
-            catch { }
+            catch {}
 
             try
             {
                 File.Delete(Path.ChangeExtension(projPathFile, ".pdb"));
 
             }
-            catch { }
+            catch {}
 
             try
             {
                 File.Delete(Path.ChangeExtension(projPathFile, ".dll.mdb"));
 
             }
-            catch { }
+            catch {}
         }
 
         // clear all settings except for referenced assemblies (which are cleared with ClearReferences)

@@ -6,11 +6,9 @@ namespace Mirror.Examples.Chat
 {
     public class ChatWindow : MonoBehaviour
     {
-        static readonly ILogger logger = LogFactory.GetLogger(typeof(ChatWindow));
-
-        [SerializeField] InputField chatMessage;
-        [SerializeField] Text chatHistory;
-        [SerializeField] Scrollbar scrollbar;
+        public InputField chatMessage;
+        public Text chatHistory;
+        public Scrollbar scrollbar;
 
         public void Awake()
         {
@@ -24,9 +22,10 @@ namespace Mirror.Examples.Chat
                 $"<color=blue>{player.playerName}: </color> {message}";
             AppendMessage(prettyMessage);
 
-            logger.Log(message);
+            Debug.Log(message);
         }
 
+        // Called by UI element SendButton.OnClick
         public void OnSend()
         {
             if (chatMessage.text.Trim() == "")

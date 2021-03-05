@@ -24,13 +24,19 @@ namespace Mirror.Tests
         }
 
         bool clientConnected;
-        Queue<Message> clientIncoming = new Queue<Message>();
+        public Queue<Message> clientIncoming = new Queue<Message>();
         bool serverActive;
-        Queue<Message> serverIncoming = new Queue<Message>();
+        public Queue<Message> serverIncoming = new Queue<Message>();
 
         public override bool Available() => true;
-        public override int GetMaxPacketSize(int channelId) => int.MaxValue;
-        public override void Shutdown() { }
+        // limit max size to something reasonable so pool doesn't allocate
+        // int.MaxValue = 2GB each time.
+        public override int GetMaxPacketSize(int channelId) => ushort.MaxValue;
+        // 1400 max batch size
+        // -> need something != GetMaxPacketSize for testing
+        // -> MTU aka 1400 is used a lot anyway
+        public override int GetMaxBatchSize(int channelId) => 1400;
+        public override void Shutdown() {}
         public override bool ClientConnected() => clientConnected;
         public override void ClientConnect(string address)
         {
@@ -79,7 +85,8 @@ namespace Mirror.Tests
                 clientConnected = false;
             }
         }
-        void ProcessClientMessages()
+        // messages should always be processed in early update
+        public override void ClientEarlyUpdate()
         {
             // note: process even if not connected because when calling
             // Disconnect, we add a Disconnected event which still needs to be
@@ -158,7 +165,8 @@ namespace Mirror.Tests
             // not active anymore
             serverActive = false;
         }
-        void ProcessServerMessages()
+        // messages should always be processed in early update
+        public override void ServerEarlyUpdate()
         {
             while (serverIncoming.Count > 0)
             {
@@ -179,13 +187,6 @@ namespace Mirror.Tests
                         break;
                 }
             }
-        }
-
-        // processing
-        public void LateUpdate()
-        {
-            ProcessClientMessages();
-            ProcessServerMessages();
         }
     }
 }

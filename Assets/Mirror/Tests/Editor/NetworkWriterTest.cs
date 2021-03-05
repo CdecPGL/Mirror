@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using Mirror.Tests.RemoteAttrributeTest;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -22,45 +24,6 @@ namespace Mirror.Tests
             }
         }
         */
-
-        struct TestStruct
-        {
-#pragma warning disable 649
-            public int data;
-            public byte data2;
-#pragma warning restore 649
-        }
-
-        [Test]
-        public unsafe void BlittableOnThisPlatform()
-        {
-            // we assume NetworkWriter.WriteBlittable<T> to behave the same on
-            // all platforms:
-            // - need to be little endian (atm all Unity platforms are)
-            // - padded structs need to be same size across all platforms
-            //   (C# int, byte, etc. should be same on all platforms, and
-            //    C# should do the same padding on all platforms)
-            //   https://kalapos.net/Blog/ShowPost/DotNetConceptOfTheWeek13_DotNetMemoryLayout
-            // => let's have a test that we can run on different platforms to
-            //    be 100% sure
-
-            // let's assume little endian.
-            // it would also be ok if server and client are both big endian,
-            // but that's extremely unlikely.
-            Assert.That(BitConverter.IsLittleEndian, Is.True);
-
-            // TestStruct biggest member is 'int' = 4 bytes.
-            // so C# aligns it to 4 bytes, hence does padding for the byte:
-            //   0 int
-            //   1 int
-            //   2 int
-            //   3 int
-            //   4 byte
-            //   5 padding
-            //   6 padding
-            //   7 padding
-            Assert.That(sizeof(TestStruct), Is.EqualTo(8));
-        }
 
         [Test]
         public void TestWritingSmallMessage()
@@ -191,7 +154,7 @@ namespace Mirror.Tests
         public void TestReading0LengthBytesAndSize()
         {
             NetworkWriter writer = new NetworkWriter();
-            writer.WriteBytesAndSize(new byte[] { });
+            writer.WriteBytesAndSize(new byte[] {});
             NetworkReader reader = new NetworkReader(writer.ToArray());
             Assert.That(reader.ReadBytesAndSize().Length, Is.EqualTo(0));
         }
@@ -200,7 +163,7 @@ namespace Mirror.Tests
         public void TestReading0LengthBytes()
         {
             NetworkWriter writer = new NetworkWriter();
-            writer.WriteBytes(new byte[] { }, 0, 0);
+            writer.WriteBytes(new byte[] {}, 0, 0);
             NetworkReader reader = new NetworkReader(writer.ToArray());
             Assert.That(reader.ReadBytes(0).Length, Is.EqualTo(0));
         }
@@ -218,7 +181,7 @@ namespace Mirror.Tests
         {
             void EnsureThrows(Action<NetworkReader> read, byte[] data = null)
             {
-                Assert.Throws<System.IO.EndOfStreamException>(() => read(new NetworkReader(data ?? new byte[] { })));
+                Assert.Throws<System.IO.EndOfStreamException>(() => read(new NetworkReader(data ?? new byte[] {})));
             }
             // Try reading more than there is data to be read from
             // This should throw EndOfStreamException always
@@ -1005,6 +968,172 @@ namespace Mirror.Tests
             NetworkReader reader = new NetworkReader(writer.ToArray());
             List<int> readList = reader.Read<List<int>>();
             Assert.That(readList, Is.Null);
+        }
+
+
+        const int testArraySize = 4;
+        [Test]
+        [Description("ReadArray should throw if it is trying to read more than length of segment, this is to stop allocation attacks")]
+        public void TestArrayDoesNotThrowWithCorrectLength()
+        {
+            NetworkWriter writer = new NetworkWriter();
+            WriteGoodArray();
+
+            NetworkReader reader = new NetworkReader(writer.ToArray());
+            Assert.DoesNotThrow(() =>
+            {
+                _ = reader.ReadArray<int>();
+            });
+
+            void WriteGoodArray()
+            {
+                writer.WriteInt32(testArraySize);
+                int[] array = new int[testArraySize] { 1, 2, 3, 4 };
+                for (int i = 0; i < array.Length; i++)
+                    writer.Write(array[i]);
+            }
+        }
+        [Test]
+        [Description("ReadArray should throw if it is trying to read more than length of segment, this is to stop allocation attacks")]
+        [TestCase(testArraySize * sizeof(int), Description = "max allowed value to allocate array")]
+        [TestCase(testArraySize * 2)]
+        [TestCase(testArraySize + 1, Description = "min allowed to allocate")]
+        public void TestArrayThrowsIfLengthIsWrong(int badLength)
+        {
+            NetworkWriter writer = new NetworkWriter();
+            WriteBadArray();
+
+            NetworkReader reader = new NetworkReader(writer.ToArray());
+            EndOfStreamException exception = Assert.Throws<EndOfStreamException>(() =>
+            {
+                _ = reader.ReadArray<int>();
+            });
+            // todo improve this message check
+            Assert.That(exception, Has.Message.Contains($"ReadByte out of range"));
+
+            void WriteBadArray()
+            {
+                writer.WriteInt32(badLength);
+                int[] array = new int[testArraySize] { 1, 2, 3, 4 };
+                for (int i = 0; i < array.Length; i++)
+                    writer.Write(array[i]);
+            }
+        }
+
+        [Test]
+        [Description("ReadArray should throw if it is trying to read more than length of segment, this is to stop allocation attacks")]
+        [TestCase(testArraySize * sizeof(int) + 1, Description = "min read count is 1 byte, 16 array bytes are writen so 17 should throw error")]
+        [TestCase(20_000)]
+        [TestCase(int.MaxValue)]
+        [TestCase(int.MaxValue - 1)]
+        // todo add fuzzy testing to check more values
+        public void TestArrayThrowsIfLengthIsTooBig(int badLength)
+        {
+            NetworkWriter writer = new NetworkWriter();
+            WriteBadArray();
+
+            NetworkReader reader = new NetworkReader(writer.ToArray());
+            EndOfStreamException exception = Assert.Throws<EndOfStreamException>(() =>
+            {
+                _ = reader.ReadArray<int>();
+            });
+            Assert.That(exception, Has.Message.EqualTo($"Received array that is too large: {badLength}"));
+
+            void WriteBadArray()
+            {
+                writer.WriteInt32(badLength);
+                int[] array = new int[testArraySize] { 1, 2, 3, 4 };
+                for (int i = 0; i < array.Length; i++)
+                    writer.Write(array[i]);
+            }
+        }
+
+        [Test]
+        public void TestNetworkBehaviour()
+        {
+            //setup
+            GameObject gameObject = new GameObject();
+            NetworkIdentity identity = gameObject.AddComponent<NetworkIdentity>();
+            RpcNetworkIdentityBehaviour behaviour = gameObject.AddComponent<RpcNetworkIdentityBehaviour>();
+
+            const uint netId = 100;
+            identity.netId = netId;
+
+            NetworkIdentity.spawned[netId] = identity;
+
+            try
+            {
+                NetworkWriter writer = new NetworkWriter();
+                writer.WriteNetworkBehaviour(behaviour);
+
+                byte[] bytes = writer.ToArray();
+
+                Assert.That(bytes.Length, Is.EqualTo(5), "Networkbehaviour should be 5 bytes long.");
+
+                NetworkReader reader = new NetworkReader(bytes);
+                RpcNetworkIdentityBehaviour actual = reader.ReadNetworkBehaviour<RpcNetworkIdentityBehaviour>();
+                Assert.That(actual, Is.EqualTo(behaviour), "Read should find the same behaviour as written");
+            }
+            // use finally so object is destroyed evne if tests fails
+            finally
+            {
+                // teardown
+                NetworkIdentity.spawned[netId] = null;
+                GameObject.DestroyImmediate(gameObject);
+            }
+        }
+
+        [Test]
+        public void TestNetworkBehaviourNull()
+        {
+            NetworkWriter writer = new NetworkWriter();
+            writer.WriteNetworkBehaviour(null);
+
+            byte[] bytes = writer.ToArray();
+
+            Assert.That(bytes.Length, Is.EqualTo(4), "null Networkbehaviour should be 4 bytes long.");
+
+            NetworkReader reader = new NetworkReader(bytes);
+            RpcNetworkIdentityBehaviour actual = reader.ReadNetworkBehaviour<RpcNetworkIdentityBehaviour>();
+            Assert.That(actual, Is.Null, "should read null");
+
+            Assert.That(reader.Position, Is.EqualTo(4), "should read 4 bytes when netid is 0");
+        }
+
+        [Test]
+        [Description("Uses Generic read function to check weaver correctly creates it")]
+        public void TestNetworkBehaviourWeaverGenerated()
+        {
+            //setup
+            GameObject gameObject = new GameObject();
+            NetworkIdentity identity = gameObject.AddComponent<NetworkIdentity>();
+            RpcNetworkIdentityBehaviour behaviour = gameObject.AddComponent<RpcNetworkIdentityBehaviour>();
+
+            const uint netId = 100;
+            identity.netId = netId;
+
+            NetworkIdentity.spawned[netId] = identity;
+
+            try
+            {
+                NetworkWriter writer = new NetworkWriter();
+                writer.Write(behaviour);
+
+                byte[] bytes = writer.ToArray();
+
+                Assert.That(bytes.Length, Is.EqualTo(5), "Networkbehaviour should be 5 bytes long.");
+
+                NetworkReader reader = new NetworkReader(bytes);
+                RpcNetworkIdentityBehaviour actual = reader.Read<RpcNetworkIdentityBehaviour>();
+                Assert.That(actual, Is.EqualTo(behaviour), "Read should find the same behaviour as written");
+            }
+            // use finally so object is destroyed evne if tests fails
+            finally
+            {
+                // teardown
+                NetworkIdentity.spawned.Remove(netId);
+                GameObject.DestroyImmediate(gameObject);
+            }
         }
     }
 }

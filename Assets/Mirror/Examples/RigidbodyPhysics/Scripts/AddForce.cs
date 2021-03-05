@@ -4,10 +4,10 @@ namespace Mirror.Examples.RigidbodyPhysics
 {
     public class AddForce : NetworkBehaviour
     {
-        [SerializeField] Rigidbody rigidbody3d;
-        [SerializeField] float force = 500f;
+        public Rigidbody rigidbody3d;
+        public float force = 500f;
 
-        private void Start()
+        void Start()
         {
             rigidbody3d.isKinematic = !isServer;
         }
