@@ -5,23 +5,17 @@ using UnityEngine;
 namespace Mirror.Tests
 {
     [TestFixture]
-    public class NetworkManagerTest
+    public class NetworkManagerTest : MirrorEditModeTest
     {
         GameObject gameObject;
         NetworkManager manager;
 
         [SetUp]
-        public void SetupNetworkManager()
+        public override void SetUp()
         {
-            gameObject = new GameObject();
-            gameObject.AddComponent<MemoryTransport>();
+            base.SetUp();
+            gameObject = transport.gameObject;
             manager = gameObject.AddComponent<NetworkManager>();
-        }
-
-        [TearDown]
-        public void TearDownNetworkManager()
-        {
-            GameObject.DestroyImmediate(gameObject);
         }
 
         [Test]
@@ -30,7 +24,6 @@ namespace Mirror.Tests
             Assert.That(manager.dontDestroyOnLoad, Is.True);
             Assert.That(manager.runInBackground, Is.True);
             Assert.That(manager.autoStartServerBuild, Is.True);
-            Assert.That(manager.showDebugMessages, Is.False);
             Assert.That(manager.serverTickRate, Is.EqualTo(30));
             Assert.That(manager.offlineScene, Is.Empty);
             Assert.That(manager.networkAddress, Is.EqualTo("localhost"));
@@ -89,6 +82,29 @@ namespace Mirror.Tests
         }
 
         [Test]
+        public void StartHostTest()
+        {
+            manager.StartHost();
+
+            Assert.That(manager.isNetworkActive, Is.True);
+            Assert.That(manager.mode == NetworkManagerMode.Host);
+            Assert.That(NetworkServer.active, Is.True);
+            Assert.That(NetworkClient.active, Is.True);
+        }
+
+        [Test]
+        public void StopHostTest()
+        {
+            manager.StartHost();
+            manager.StopHost();
+
+            Assert.That(manager.isNetworkActive, Is.False);
+            Assert.That(manager.mode == NetworkManagerMode.Offline);
+            Assert.That(NetworkServer.active, Is.False);
+            Assert.That(NetworkClient.active, Is.False);
+        }
+
+        [Test]
         public void ShutdownTest()
         {
             manager.StartClient();
@@ -142,7 +158,7 @@ namespace Mirror.Tests
         [Test]
         public void StartClientUriTest()
         {
-            UriBuilder uriBuilder = new UriBuilder()
+            UriBuilder uriBuilder = new UriBuilder
             {
                 Host = "localhost",
                 Scheme = "local"

@@ -74,6 +74,28 @@ namespace Mirror.Tests
             Assert.That(decompressed.w, Is.EqualTo(value.w).Within(0.005f));
         }
 
+        // someone mentioned issues with 90 degree euler becoming -90 degree
+        [Test]
+        public void CompressAndDecompressQuaternion_90DegreeEuler()
+        {
+            // we need a normalized value
+            Quaternion value = Quaternion.Euler(0, 90, 0).normalized;
+
+            // compress
+            uint data = Compression.CompressQuaternion(value);
+
+            // decompress
+            Quaternion decompressed = Compression.DecompressQuaternion(data);
+
+            // compare them. Quaternion.Angle is easiest to get the angle
+            // between them. using .eulerAngles would give 0, 90, 360 which is
+            // hard to compare.
+            Debug.Log("euler=" + decompressed.eulerAngles);
+            float angle = Quaternion.Angle(value, decompressed);
+            // 1 degree tolerance
+            Assert.That(Mathf.Abs(angle), Is.LessThanOrEqualTo(1));
+        }
+
         // client sending invalid data should still produce valid quaternions to
         // avoid any possible bugs on server
         [Test]
@@ -83,6 +105,31 @@ namespace Mirror.Tests
             // 0xFFFFFFFF will decompress to (0.7, 0.7, 0.7, NaN)
             Quaternion decompressed = Compression.DecompressQuaternion(0xFFFFFFFF);
             Assert.That(decompressed, Is.EqualTo(Quaternion.identity));
+        }
+
+        // test for issue https://github.com/vis2k/Mirror/issues/2674
+        [Test, Ignore("TODO")]
+        public void CompressAndDecompressQuaternion_2674()
+        {
+            // we need a normalized value
+            Quaternion value = Quaternion.Euler(338.850037f, 170.609955f, 182.979996f).normalized;
+            Debug.Log("immediate=" + value.eulerAngles);
+
+            // compress
+            uint data = Compression.CompressQuaternion(value);
+
+            // decompress
+            Quaternion decompressed = Compression.DecompressQuaternion(data);
+
+            // compare them. Quaternion.Angle is easiest to get the angle
+            // between them. using .eulerAngles would give 0, 90, 360 which is
+            // hard to compare.
+
+            //  (51.6, 355.5, 348.1)
+            Debug.Log("euler=" + decompressed.eulerAngles);
+            float angle = Quaternion.Angle(value, decompressed);
+            // 1 degree tolerance
+            Assert.That(Mathf.Abs(angle), Is.LessThanOrEqualTo(1));
         }
     }
 }
