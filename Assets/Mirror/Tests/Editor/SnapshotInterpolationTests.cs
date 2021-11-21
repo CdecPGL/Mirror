@@ -20,25 +20,24 @@ namespace Mirror.Tests
             this.value = value;
         }
 
-        public Snapshot Interpolate(Snapshot to, double t) =>
+        public static SimpleSnapshot Interpolate(SimpleSnapshot from, SimpleSnapshot to, double t) =>
             new SimpleSnapshot(
                 // interpolated snapshot is applied directly. don't need timestamps.
                 0, 0,
                 // lerp unclamped in case we ever need to extrapolate.
                 // atm SnapshotInterpolation never does.
-                Mathd.LerpUnclamped(value, ((SimpleSnapshot)to).value, t)
-            );
+                Mathd.LerpUnclamped(from.value, to.value, t));
     }
 
     public class SnapshotInterpolationTests
     {
         // buffer for convenience so we don't have to create it manually each time
-        SortedList<double, Snapshot> buffer;
+        SortedList<double, SimpleSnapshot> buffer;
 
         [SetUp]
         public void SetUp()
         {
-            buffer = new SortedList<double, Snapshot>();
+            buffer = new SortedList<double, SimpleSnapshot>();
         }
 
         [Test]
@@ -161,6 +160,29 @@ namespace Mirror.Tests
             Assert.That(SnapshotInterpolation.HasAmountOlderThan(buffer, 2.1, 3), Is.True);
         }
 
+        // UDP messages might arrive twice sometimes.
+        // make sure InsertIfNewEnough can handle it.
+        [Test]
+        public void InsertIfNewEnough_Duplicate()
+        {
+            SimpleSnapshot a = new SimpleSnapshot(0, 0, 0);
+            SimpleSnapshot b = new SimpleSnapshot(1, 1, 0);
+            SimpleSnapshot c = new SimpleSnapshot(2, 2, 0);
+
+            // add two valid snapshots first.
+            // we can't add 'duplicates' before 3rd and 4th anyway.
+            SnapshotInterpolation.InsertIfNewEnough(a, buffer);
+            SnapshotInterpolation.InsertIfNewEnough(b, buffer);
+
+            // insert C which is newer than B.
+            // then insert it again because it arrive twice.
+            SnapshotInterpolation.InsertIfNewEnough(c, buffer);
+            SnapshotInterpolation.InsertIfNewEnough(c, buffer);
+
+            // count should still be 3.
+            Assert.That(buffer.Count, Is.EqualTo(3));
+        }
+
         [Test]
         public void CalculateCatchup_Empty()
         {
@@ -189,7 +211,7 @@ namespace Mirror.Tests
             buffer.Add(b.remoteTimestamp, b);
             buffer.Add(c.remoteTimestamp, c);
 
-            SnapshotInterpolation.GetFirstSecondAndDelta(buffer, out Snapshot first, out Snapshot second, out double delta);
+            SnapshotInterpolation.GetFirstSecondAndDelta(buffer, out SimpleSnapshot first, out SimpleSnapshot second, out double delta);
             Assert.That(first, Is.EqualTo(a));
             Assert.That(second, Is.EqualTo(b));
             Assert.That(delta, Is.EqualTo(b.remoteTimestamp - a.remoteTimestamp));
@@ -218,7 +240,7 @@ namespace Mirror.Tests
             float bufferTime = 0;
             int catchupThreshold = Int32.MaxValue;
             float catchupMultiplier = 0;
-            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, out Snapshot computed);
+            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, SimpleSnapshot.Interpolate, out SimpleSnapshot computed);
 
             // should not spit out any snapshot to apply
             Assert.That(result, Is.False);
@@ -251,7 +273,7 @@ namespace Mirror.Tests
             float bufferTime = 2;
             int catchupThreshold = Int32.MaxValue;
             float catchupMultiplier = 0;
-            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, out Snapshot computed);
+            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, SimpleSnapshot.Interpolate, out SimpleSnapshot computed);
 
             // should not spit out any snapshot to apply
             Assert.That(result, Is.False);
@@ -279,7 +301,7 @@ namespace Mirror.Tests
             float bufferTime = 1;
             int catchupThreshold = Int32.MaxValue;
             float catchupMultiplier = 0;
-            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, out Snapshot computed);
+            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, SimpleSnapshot.Interpolate, out SimpleSnapshot computed);
 
             // should not spit out any snapshot to apply
             Assert.That(result, Is.False);
@@ -312,11 +334,10 @@ namespace Mirror.Tests
             float bufferTime = 2;
             int catchupThreshold = Int32.MaxValue;
             float catchupMultiplier = 0;
-            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, out Snapshot computed);
+            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, SimpleSnapshot.Interpolate, out SimpleSnapshot computed);
 
             // should spit out the interpolated snapshot
             Assert.That(result, Is.True);
-            SimpleSnapshot computedCasted = (SimpleSnapshot)computed;
             // interpolation started just now, from 0.
             // and deltaTime is 1.5, so we should be at 1.5 now.
             Assert.That(interpolationTime, Is.EqualTo(1.5));
@@ -324,7 +345,7 @@ namespace Mirror.Tests
             Assert.That(buffer.Count, Is.EqualTo(2));
             // interpolationTime is at 1.5, so 3/4 between first & second.
             // computed snapshot should be interpolated at 3/4ths.
-            Assert.That(computedCasted.value, Is.EqualTo(1.75).Within(Mathf.Epsilon));
+            Assert.That(computed.value, Is.EqualTo(1.75).Within(Mathf.Epsilon));
         }
 
         // fourth step: compute should begin if we have two old enough snapshots
@@ -350,11 +371,10 @@ namespace Mirror.Tests
             float bufferTime = 2;
             int catchupThreshold = Int32.MaxValue;
             float catchupMultiplier = 0;
-            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, out Snapshot computed);
+            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, SimpleSnapshot.Interpolate, out SimpleSnapshot computed);
 
             // should spit out the interpolated snapshot
             Assert.That(result, Is.True);
-            SimpleSnapshot computedCasted = (SimpleSnapshot)computed;
             // interpolation started just now, from 0.
             // and deltaTime is 0.5, so we should be at 0.5 now.
             Assert.That(interpolationTime, Is.EqualTo(0.5));
@@ -362,7 +382,7 @@ namespace Mirror.Tests
             // the first two. third should still be there.
             Assert.That(buffer.Count, Is.EqualTo(3));
             // computed snapshot should be interpolated in the middle
-            Assert.That(computedCasted.value, Is.EqualTo(1.5).Within(Mathf.Epsilon));
+            Assert.That(computed.value, Is.EqualTo(1.5).Within(Mathf.Epsilon));
         }
 
         // fourth step: simulate interpolation after a long time of no updates.
@@ -388,11 +408,10 @@ namespace Mirror.Tests
             float bufferTime = 2;
             int catchupThreshold = Int32.MaxValue;
             float catchupMultiplier = 0;
-            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, out Snapshot computed);
+            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, SimpleSnapshot.Interpolate, out SimpleSnapshot computed);
 
             // should spit out the interpolated snapshot
             Assert.That(result, Is.True);
-            SimpleSnapshot computedCasted = (SimpleSnapshot)computed;
             // interpolation started at 0.5, right between first & second.
             // we received another snapshot at t=101.
             // delta = 98.5 seconds
@@ -409,7 +428,7 @@ namespace Mirror.Tests
             // which is at 98% of the value
             // => Lerp(1, 101, 0.98): 101-1 is 100. 98% are 98. relative to '1'
             //    makes it 99.
-            Assert.That(computedCasted.value, Is.EqualTo(99).Within(Mathf.Epsilon));
+            Assert.That(computed.value, Is.EqualTo(99).Within(Mathf.Epsilon));
         }
 
         // fourth step: catchup should be considered if buffer gets too large
@@ -439,11 +458,10 @@ namespace Mirror.Tests
             double deltaTime = 0.5;
             double interpolationTime = 0;
             float bufferTime = 2;
-            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, out Snapshot computed);
+            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, SimpleSnapshot.Interpolate, out SimpleSnapshot computed);
 
             // should spit out the interpolated snapshot
             Assert.That(result, Is.True);
-            SimpleSnapshot computedCasted = (SimpleSnapshot)computed;
             // interpolation started just now, from 0.
             // and deltaTime is 0.5 + 50% catchup, so we should be at 0.75 now
             Assert.That(interpolationTime, Is.EqualTo(0.75));
@@ -452,7 +470,7 @@ namespace Mirror.Tests
             Assert.That(buffer.Count, Is.EqualTo(4));
             // computed snapshot should be interpolated in 3/4 because
             // interpolationTime is at 3/4
-            Assert.That(computedCasted.value, Is.EqualTo(1.75).Within(Mathf.Epsilon));
+            Assert.That(computed.value, Is.EqualTo(1.75).Within(Mathf.Epsilon));
         }
 
         // fifth step: interpolation time overshoots the end while waiting for
@@ -501,11 +519,10 @@ namespace Mirror.Tests
             float bufferTime = 2;
             int catchupThreshold = Int32.MaxValue;
             float catchupMultiplier = 0;
-            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, out Snapshot computed);
+            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, SimpleSnapshot.Interpolate, out SimpleSnapshot computed);
 
             // should spit out the interpolated snapshot
             Assert.That(result, Is.True);
-            SimpleSnapshot computedCasted = (SimpleSnapshot)computed;
             // interpolation started at the end = 1
             // and deltaTime is 0.5, so it's at 1.5 internally.
             //
@@ -520,7 +537,7 @@ namespace Mirror.Tests
             // buffer should be untouched, we are still interpolating between the two
             Assert.That(buffer.Count, Is.EqualTo(2));
             // computed snapshot should NOT extrapolate beyond second snap.
-            Assert.That(computedCasted.value, Is.EqualTo(2).Within(Mathf.Epsilon));
+            Assert.That(computed.value, Is.EqualTo(2).Within(Mathf.Epsilon));
         }
 
         // fifth step: interpolation time overshoots the end while having more
@@ -570,11 +587,10 @@ namespace Mirror.Tests
             float bufferTime = 2;
             int catchupThreshold = Int32.MaxValue;
             float catchupMultiplier = 0;
-            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, out Snapshot computed);
+            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, SimpleSnapshot.Interpolate, out SimpleSnapshot computed);
 
             // should still spit out a result between first & second.
             Assert.That(result, Is.True);
-            SimpleSnapshot computedCasted = (SimpleSnapshot)computed;
             // interpolation started at the end = 1
             // and deltaTime is 0.5, so we were at 1.5 internally.
             //
@@ -591,7 +607,7 @@ namespace Mirror.Tests
             // buffer should be untouched. shouldn't have moved to third yet.
             Assert.That(buffer.Count, Is.EqualTo(3));
             // computed snapshot should be all the way at second snapshot.
-            Assert.That(computedCasted.value, Is.EqualTo(2).Within(Mathf.Epsilon));
+            Assert.That(computed.value, Is.EqualTo(2).Within(Mathf.Epsilon));
         }
 
         // fifth step: interpolation time overshoots the end while having more
@@ -631,11 +647,10 @@ namespace Mirror.Tests
             float bufferTime = 2;
             int catchupThreshold = Int32.MaxValue;
             float catchupMultiplier = 0;
-            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, out Snapshot computed);
+            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, SimpleSnapshot.Interpolate, out SimpleSnapshot computed);
 
             // should spit out the interpolated snapshot
             Assert.That(result, Is.True);
-            SimpleSnapshot computedCasted = (SimpleSnapshot)computed;
             // interpolation started at the end = 1
             // and deltaTime is 0.5, so we were at 1.5 internally.
             // we have more snapshots, so we jump to the next and subtract '1'
@@ -645,7 +660,7 @@ namespace Mirror.Tests
             Assert.That(buffer.Count, Is.EqualTo(2));
             // computed snapshot should be 1/4 way between second and third
             // because delta is 2 and interpolationTime is at 0.5 which is 1/4
-            Assert.That(computedCasted.value, Is.EqualTo(2.5).Within(Mathf.Epsilon));
+            Assert.That(computed.value, Is.EqualTo(2.5).Within(Mathf.Epsilon));
         }
 
         // fifth step: interpolation time overshoots 2x the end while having
@@ -688,11 +703,10 @@ namespace Mirror.Tests
             float bufferTime = 2;
             int catchupThreshold = Int32.MaxValue;
             float catchupMultiplier = 0;
-            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, out Snapshot computed);
+            bool result = SnapshotInterpolation.Compute(localTime, deltaTime, ref interpolationTime, bufferTime, buffer, catchupThreshold, catchupMultiplier, SimpleSnapshot.Interpolate, out SimpleSnapshot computed);
 
             // should spit out the interpolated snapshot
             Assert.That(result, Is.True);
-            SimpleSnapshot computedCasted = (SimpleSnapshot)computed;
             // interpolation started at the end = 1
             // and deltaTime is 2.5, so we were at 4.5 internally.
             // we have more snapshots, so we:
@@ -704,7 +718,7 @@ namespace Mirror.Tests
             Assert.That(buffer.Count, Is.EqualTo(2));
             // computed snapshot should be 1/4 way between second and third
             // because delta is 2 and interpolationTime is at 0.5 which is 1/4
-            Assert.That(computedCasted.value, Is.EqualTo(4.5).Within(Mathf.Epsilon));
+            Assert.That(computed.value, Is.EqualTo(4.5).Within(Mathf.Epsilon));
         }
     }
 }

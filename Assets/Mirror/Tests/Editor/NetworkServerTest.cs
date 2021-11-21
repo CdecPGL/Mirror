@@ -320,6 +320,32 @@ namespace Mirror.Tests
             Assert.That(NetworkServer.localConnection, Is.Null);
         }
 
+        // test to reproduce https://github.com/vis2k/Mirror/pull/2797
+        [Test]
+        public void Destroy_HostMode_CallsOnStopAuthority()
+        {
+            // listen & connect a HOST client
+            NetworkServer.Listen(1);
+            ConnectHostClientBlockingAuthenticatedAndReady();
+
+            // spawn a player(!) object
+            // otherwise client wouldn't receive spawn / authority messages
+            CreateNetworkedAndSpawnPlayer(out _, out NetworkIdentity player,
+                out StopAuthorityCalledNetworkBehaviour comp,
+                NetworkServer.localConnection);
+
+            // need to have authority for this test
+            Assert.That(player.hasAuthority, Is.True);
+
+            // destroy and ignore 'Destroy called in Edit mode' error
+            LogAssert.ignoreFailingMessages = true;
+            NetworkServer.Destroy(player.gameObject);
+            LogAssert.ignoreFailingMessages = false;
+
+            // destroy should call OnStopAuthority
+            Assert.That(comp.called, Is.EqualTo(1));
+        }
+
         // send a message all the way from client to server
         [Test]
         public void Send_ClientToServerMessage()
@@ -604,6 +630,25 @@ namespace Mirror.Tests
             Assert.That(connectionToClient.remoteTimeStamp, Is.EqualTo(sendTime).Within(waitTime / 10));
         }
 
+        // test to avoid https://github.com/vis2k/Mirror/issues/2882
+        // messages in a batch aren't length prefixed.
+        // if we can't read one, we need to warn and disconnect.
+        // otherwise it overlaps to the next message and causes undefined behaviour.
+        [Test]
+        public void Send_ClientToServerMessage_UnknownMessageIdDisconnects()
+        {
+            // listen & connect
+            NetworkServer.Listen(1);
+            ConnectClientBlocking(out NetworkConnectionToClient connectionToClient);
+
+            // send a message without a registered handler
+            NetworkClient.Send(new TestMessage1());
+            ProcessMessages();
+
+            // should have been disconnected
+            Assert.That(NetworkServer.connections.ContainsKey(connectionToClient.connectionId), Is.False);
+        }
+
         [Test]
         public void Send_ServerToClientMessage_SetsRemoteTimeStamp()
         {
@@ -635,6 +680,25 @@ namespace Mirror.Tests
             //  finish the batch. but the difference should not be > 'waitTime')
             Assert.That(called, Is.EqualTo(1));
             Assert.That(NetworkClient.connection.remoteTimeStamp, Is.EqualTo(sendTime).Within(waitTime / 10));
+        }
+
+        // test to avoid https://github.com/vis2k/Mirror/issues/2882
+        // messages in a batch aren't length prefixed.
+        // if we can't read one, we need to warn and disconnect.
+        // otherwise it overlaps to the next message and causes undefined behaviour.
+        [Test]
+        public void Send_ServerToClientMessage_UnknownMessageIdDisconnects()
+        {
+            // listen & connect
+            NetworkServer.Listen(1);
+            ConnectClientBlocking(out NetworkConnectionToClient connectionToClient);
+
+            // send a message without a registered handler
+            connectionToClient.Send(new TestMessage1());
+            ProcessMessages();
+
+            // should have been disconnected
+            Assert.That(NetworkClient.active, Is.False);
         }
 
         [Test]
@@ -707,19 +771,12 @@ namespace Mirror.Tests
         {
             // listen & connect
             NetworkServer.Listen(1);
-            ConnectClientBlockingAuthenticatedAndReady(out NetworkConnectionToClient connectionToClient);
+            ConnectHostClientBlockingAuthenticatedAndReady();
 
             // add an identity with two networkbehaviour components
-            CreateNetworked(out GameObject _, out NetworkIdentity identity, out CommandTestNetworkBehaviour comp);
-            identity.netId = 42;
-            identity.isLocalPlayer = true;
-            // for authority check
-            identity.connectionToClient = connectionToClient;
-            connectionToClient.identity = identity;
-
-            // identity needs to be in spawned dict, otherwise command handler
-            // won't find it
-            NetworkIdentity.spawned[identity.netId] = identity;
+            // spawned, otherwise command handler won't find it in .spawned.
+            // WITH OWNER = WITH AUTHORITY
+            CreateNetworkedAndSpawn(out GameObject _, out NetworkIdentity _, out CommandTestNetworkBehaviour comp, NetworkServer.localConnection);
 
             // call the command
             comp.TestCommand();
@@ -734,19 +791,12 @@ namespace Mirror.Tests
         {
             // listen & connect
             NetworkServer.Listen(1);
-            ConnectClientBlockingAuthenticatedAndReady(out NetworkConnectionToClient connectionToClient);
+            ConnectHostClientBlockingAuthenticatedAndReady();
 
-            // add an identity with two networkbehaviour components
-            CreateNetworked(out GameObject _, out NetworkIdentity identity, out CommandTestNetworkBehaviour comp0, out CommandTestNetworkBehaviour comp1);
-            identity.netId = 42;
-            identity.isLocalPlayer = true;
-            // for authority check
-            identity.connectionToClient = connectionToClient;
-            connectionToClient.identity = identity;
-
-            // identity needs to be in spawned dict, otherwise command handler
-            // won't find it
-            NetworkIdentity.spawned[identity.netId] = identity;
+            // add an identity with two networkbehaviour components.
+            // spawned, otherwise command handler won't find it in .spawned.
+            // WITH OWNER = WITH AUTHORITY
+            CreateNetworkedAndSpawn(out GameObject _, out NetworkIdentity _, out CommandTestNetworkBehaviour comp0, out CommandTestNetworkBehaviour comp1, NetworkServer.localConnection);
 
             // call the command
             comp1.TestCommand();
@@ -760,19 +810,12 @@ namespace Mirror.Tests
         {
             // listen & connect
             NetworkServer.Listen(1);
-            ConnectClientBlockingAuthenticatedAndReady(out NetworkConnectionToClient connectionToClient);
+            ConnectHostClientBlockingAuthenticatedAndReady();
 
             // add an identity with two networkbehaviour components
-            CreateNetworked(out GameObject _, out NetworkIdentity identity, out CommandTestNetworkBehaviour comp);
-            identity.netId = 42;
-            identity.isLocalPlayer = true;
-            // for authority check
-            identity.connectionToClient = connectionToClient;
-            connectionToClient.identity = identity;
-
-            // identity needs to be in spawned dict, otherwise command handler
-            // won't find it
-            NetworkIdentity.spawned[identity.netId] = identity;
+            // spawned, otherwise command handler won't find it in .spawned.
+            // WITH OWNER = WITH AUTHORITY
+            CreateNetworkedAndSpawn(out GameObject _, out NetworkIdentity identity, out CommandTestNetworkBehaviour comp, NetworkServer.localConnection);
 
             // change identity's owner connection so we can't call [Commands] on it
             identity.connectionToClient = new LocalConnectionToClient();
@@ -788,19 +831,12 @@ namespace Mirror.Tests
         {
             // listen & connect
             NetworkServer.Listen(1);
-            ConnectClientBlockingAuthenticatedAndReady(out NetworkConnectionToClient connectionToClient);
+            ConnectHostClientBlockingAuthenticatedAndReady();
 
             // add an identity with two networkbehaviour components
-            CreateNetworked(out GameObject _, out NetworkIdentity identity, out CommandTestNetworkBehaviour comp);
-            identity.netId = 42;
-            identity.isLocalPlayer = false; // NO AUTHORITY
-            // for authority check
-            identity.connectionToClient = connectionToClient;
-            connectionToClient.identity = identity;
-
-            // identity needs to be in spawned dict, otherwise command handler
-            // won't find it
-            NetworkIdentity.spawned[identity.netId] = identity;
+            // spawned, otherwise command handler won't find it in .spawned.
+            // WITHOUT OWNER = WITHOUT AUTHORITY for this test
+            CreateNetworkedAndSpawn(out GameObject _, out NetworkIdentity _, out CommandTestNetworkBehaviour comp);
 
             // call the command
             comp.TestCommand();
@@ -811,16 +847,23 @@ namespace Mirror.Tests
         [Test]
         public void ActivateHostSceneCallsOnStartClient()
         {
-            // add an identity with a networkbehaviour to .spawned
-            CreateNetworked(out GameObject _, out NetworkIdentity identity, out OnStartClientTestNetworkBehaviour comp);
-            identity.netId = 42;
-            NetworkIdentity.spawned[identity.netId] = identity;
+            // listen & connect
+            NetworkServer.Listen(1);
+            ConnectClientBlockingAuthenticatedAndReady(out _);
 
-            // ActivateHostScene
+            // spawn identity with a networkbehaviour.
+            // (needs to be in .spawned for ActivateHostScene)
+            CreateNetworkedAndSpawn(
+                out _, out NetworkIdentity serverIdentity, out OnStartClientTestNetworkBehaviour serverComp,
+                out _, out _, out _);
+
+            // ActivateHostScene calls OnStartClient for spawned objects where
+            // isClient is still false. set it to false first.
+            serverIdentity.isClient = false;
             NetworkServer.ActivateHostScene();
 
             // was OnStartClient called for all .spawned networkidentities?
-            Assert.That(comp.called, Is.EqualTo(1));
+            Assert.That(serverComp.called, Is.EqualTo(1));
         }
 
         [Test]
@@ -1056,6 +1099,61 @@ namespace Mirror.Tests
         }
 
         [Test]
+        public void UnSpawnAndClearAuthority()
+        {
+            // create scene object with valid netid and set active
+            CreateNetworked(out GameObject go, out NetworkIdentity identity, out StartAuthorityCalledNetworkBehaviour compStart, out StopAuthorityCalledNetworkBehaviour compStop);
+            identity.sceneId = 42;
+            identity.netId = 123;
+            go.SetActive(true);
+
+            // set authority from false to true, which should call OnStartAuthority
+            identity.hasAuthority = true;
+            identity.NotifyAuthority();
+
+            // shouldn't be touched
+            Assert.That(identity.hasAuthority, Is.True);
+            // start should be called
+            Assert.That(compStart.called, Is.EqualTo(1));
+            // stop shouldn't
+            Assert.That(compStop.called, Is.EqualTo(0));
+
+            // unspawn should reset netid and remove authority
+            NetworkServer.UnSpawn(go);
+            Assert.That(identity.netId, Is.Zero);
+
+            // should be changed
+            Assert.That(identity.hasAuthority, Is.False);
+            // same as before
+            Assert.That(compStart.called, Is.EqualTo(1));
+            // stop should be called
+            Assert.That(compStop.called, Is.EqualTo(1));
+        }
+
+        // test to reproduce a bug where stopping the server would not call
+        // OnStopServer on scene objects:
+        // https://github.com/vis2k/Mirror/issues/2119
+        [Test]
+        public void Shutdown_CallsSceneObjectsOnStopServer()
+        {
+            // listen & connect a client
+            NetworkServer.Listen(1);
+            ConnectClientBlocking(out NetworkConnectionToClient _);
+
+            // create & spawn an object
+            CreateNetworkedAndSpawn(out GameObject _, out NetworkIdentity identity,
+                out StopServerCalledNetworkBehaviour comp);
+
+            // make sure it was spawned as a scene object.
+            // they don't come from prefabs, so they always are.
+            Assert.That(identity.sceneId, !Is.Null);
+
+            // shutdown should call OnStopServer etc.
+            NetworkServer.Shutdown();
+            Assert.That(comp.called, Is.EqualTo(1));
+        }
+
+        [Test]
         public void ShutdownCleanup()
         {
             // listen
@@ -1185,30 +1283,31 @@ namespace Mirror.Tests
             NetworkServer.NetworkLateUpdate();
         }
 
-        // NetworkServer.Update iterates all connections.
-        // a timed out connection may call Disconnect, trying to modify the
-        // collection during the loop.
-        // -> test to prevent https://github.com/vis2k/Mirror/pull/2718
+        // SyncLists/Dict/Set .changes are only flushed when serializing.
+        // if an object has no observers, then serialize is never called.
+        // if we still keep changing the lists, then .changes would grow forever.
+        // => need to make sure that .changes doesn't grow while no observers.
         [Test]
-        public void UpdateWithTimedOutConnection()
+        public void SyncObjectChanges_DontGrowWithoutObservers()
         {
-            // configure to disconnect with '0' timeout (= immediately)
-#pragma warning disable 618
-            NetworkServer.disconnectInactiveConnections = true;
-            NetworkServer.disconnectInactiveTimeout = 0;
-
-            // start
             NetworkServer.Listen(1);
+            ConnectHostClientBlockingAuthenticatedAndReady();
 
-            // add a connection
-            NetworkServer.connections[42] = new FakeNetworkConnection{isReady=true};
+            // one monster
+            CreateNetworkedAndSpawn(out _, out NetworkIdentity identity, out NetworkBehaviourWithSyncVarsAndCollections comp);
 
-            // update
-            NetworkServer.NetworkLateUpdate();
+            // without AOI, connections observer everything.
+            // clear the observers first.
+            identity.ClearObservers();
 
-            // clean up
-            NetworkServer.disconnectInactiveConnections = false;
-#pragma warning restore 618
+            // insert into a synclist, which would add to .changes
+            comp.list.Add(42);
+
+            // update everything once
+            ProcessMessages();
+
+            // changes should be empty since we have no observers
+            Assert.That(comp.list.GetChangeCount(), Is.EqualTo(0));
         }
     }
 }
