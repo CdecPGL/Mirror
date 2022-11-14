@@ -1,4 +1,3 @@
-using System;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -59,7 +58,7 @@ namespace Mirror.Tests.SyncVarAttributeTests
         public MockMonsterBase monster2;
     }
 
-    public class SyncVarAttributeTest : SyncVarAttributeTestBase
+    public class SyncVarAttributeTest : MirrorTest
     {
         [SetUp]
         public override void SetUp()
@@ -72,6 +71,12 @@ namespace Mirror.Tests.SyncVarAttributeTests
             // we are testing server->client syncs.
             // so we need truly separted server & client, not host.
             ConnectClientBlockingAuthenticatedAndReady(out _);
+        }
+
+        [TearDown]
+        public override void TearDown()
+        {
+            base.TearDown();
         }
 
         [Test]
@@ -153,37 +158,7 @@ namespace Mirror.Tests.SyncVarAttributeTests
         }
 
         [Test]
-        public void TestSynchronizingObjects()
-        {
-            // set up a "server" object
-            CreateNetworked(out _, out NetworkIdentity identity1, out MockPlayer player1);
-            MockPlayer.Guild myGuild = new MockPlayer.Guild
-            {
-                name = "Back street boys"
-            };
-            player1.guild = myGuild;
-
-            // serialize all the data as we would for the network
-            NetworkWriter ownerWriter = new NetworkWriter();
-            // not really used in this Test
-            NetworkWriter observersWriter = new NetworkWriter();
-            identity1.OnSerializeAllSafely(true, ownerWriter, observersWriter);
-
-            // set up a "client" object
-            CreateNetworked(out GameObject gameObject2, out NetworkIdentity identity2, out MockPlayer player2);
-
-            // apply all the data from the server object
-            NetworkReader reader = new NetworkReader(ownerWriter.ToArray());
-            identity2.OnDeserializeAllSafely(reader, true);
-
-            // check that the syncvars got updated
-            Assert.That(player2.guild.name, Is.EqualTo("Back street boys"), "Data should be synchronized");
-        }
-
-        [Test]
-        [TestCase(true)]
-        [TestCase(false)]
-        public void SyncsGameobject(bool initialState)
+        public void SyncsGameobject()
         {
             CreateNetworkedAndSpawn(
                 out _, out _, out SyncVarGameObject serverObject,
@@ -197,15 +172,12 @@ namespace Mirror.Tests.SyncVarAttributeTests
             serverObject.value = serverValue;
             clientObject.value = null;
 
-            bool written = SyncToClient(serverObject, clientObject, initialState);
-            Assert.IsTrue(written);
+            ProcessMessages();
             Assert.That(clientObject.value, Is.EqualTo(clientValue));
         }
 
         [Test]
-        [TestCase(true)]
-        [TestCase(false)]
-        public void SyncIdentity(bool initialState)
+        public void SyncIdentity()
         {
             CreateNetworkedAndSpawn(
                 out _, out _, out SyncVarNetworkIdentity serverObject,
@@ -219,15 +191,12 @@ namespace Mirror.Tests.SyncVarAttributeTests
             serverObject.value = serverValue;
             clientObject.value = null;
 
-            bool written = SyncToClient(serverObject, clientObject, initialState);
-            Assert.IsTrue(written);
+            ProcessMessages();
             Assert.That(clientObject.value, Is.EqualTo(clientValue));
         }
 
         [Test]
-        [TestCase(true)]
-        [TestCase(false)]
-        public void SyncTransform(bool initialState)
+        public void SyncTransform()
         {
             CreateNetworkedAndSpawn(
                 out _, out _, out SyncVarTransform serverObject,
@@ -244,15 +213,12 @@ namespace Mirror.Tests.SyncVarAttributeTests
             serverObject.value = serverValue;
             clientObject.value = null;
 
-            bool written = SyncToClient(serverObject, clientObject, initialState);
-            Assert.IsTrue(written);
+            ProcessMessages();
             Assert.That(clientObject.value, Is.EqualTo(clientValue));
         }
 
         [Test]
-        [TestCase(true)]
-        [TestCase(false)]
-        public void SyncsBehaviour(bool initialState)
+        public void SyncsBehaviour()
         {
             CreateNetworkedAndSpawn(
                 out _, out _, out SyncVarNetworkBehaviour serverObject,
@@ -266,15 +232,12 @@ namespace Mirror.Tests.SyncVarAttributeTests
             serverObject.value = serverValue;
             clientObject.value = null;
 
-            bool written = SyncToClient(serverObject, clientObject, initialState);
-            Assert.IsTrue(written);
+            ProcessMessages();
             Assert.That(clientObject.value, Is.EqualTo(clientValue));
         }
 
         [Test]
-        [TestCase(true)]
-        [TestCase(false)]
-        public void SyncsMultipleBehaviour(bool initialState)
+        public void SyncsMultipleBehaviour()
         {
             CreateNetworkedAndSpawn(
                 out _, out _, out SyncVarNetworkBehaviour serverObject,
@@ -298,23 +261,25 @@ namespace Mirror.Tests.SyncVarAttributeTests
             serverObject.value = serverBehaviour1;
             clientObject.value = null;
 
-            bool written1 = SyncToClient(serverObject, clientObject, initialState);
-            Assert.IsTrue(written1);
+            ProcessMessages();
             Assert.That(clientObject.value, Is.EqualTo(clientBehaviour1));
 
             // check that behaviour 2 can be synced
             serverObject.value = serverBehaviour2;
             clientObject.value = null;
 
-            bool written2 = SyncToClient(serverObject, clientObject, initialState);
-            Assert.IsTrue(written2);
+            ProcessMessages();
             Assert.That(clientObject.value, Is.EqualTo(clientBehaviour2));
         }
 
+        // this test is also important if we do LocalWorldState later:
+        // - if LocalWorldMessage spawns netId=N
+        // - and we remove N from NetworkClient.spawned
+        // - and the next LocalWorldMessage contains updated payload for N
+        // =>  client should NOT assume it's a spawned payload just because the
+        //     netId isn't in spawned anymore.
         [Test]
-        [TestCase(true)]
-        [TestCase(false)]
-        public void SyncVarCacheNetidForGameObject(bool initialState)
+        public void SyncVarCacheNetidForGameObject()
         {
             CreateNetworkedAndSpawn(
                 out _, out _, out SyncVarGameObject serverObject,
@@ -330,15 +295,10 @@ namespace Mirror.Tests.SyncVarAttributeTests
             serverObject.value = serverValue;
             clientObject.value = null;
 
-            // write server data
-            bool written = ServerWrite(serverObject, initialState, out ArraySegment<byte> data, out int writeLength);
-            Assert.IsTrue(written, "did not write");
-
             // remove identity from client, as if it walked out of range
             NetworkClient.spawned.Remove(clientIdentity.netId);
 
-            // read client data, this should be cached in field
-            ClientRead(clientObject, initialState, data, writeLength);
+            ProcessMessages();
 
             // check field shows as null
             Assert.That(clientObject.value, Is.EqualTo(null), "field should return null");
@@ -350,10 +310,14 @@ namespace Mirror.Tests.SyncVarAttributeTests
             Assert.That(clientObject.value, Is.EqualTo(clientValue), "fields should return clientValue");
         }
 
+        // this test is also important if we do LocalWorldState later:
+        // - if LocalWorldMessage spawns netId=N
+        // - and we remove N from NetworkClient.spawned
+        // - and the next LocalWorldMessage contains updated payload for N
+        // =>  client should NOT assume it's a spawned payload just because the
+        //     netId isn't in spawned anymore.
         [Test]
-        [TestCase(true)]
-        [TestCase(false)]
-        public void SyncVarCacheNetidForIdentity(bool initialState)
+        public void SyncVarCacheNetidForIdentity()
         {
             CreateNetworkedAndSpawn(
                 out _, out _, out SyncVarNetworkIdentity serverObject,
@@ -369,15 +333,10 @@ namespace Mirror.Tests.SyncVarAttributeTests
             serverObject.value = serverValue;
             clientObject.value = null;
 
-            // write server data
-            bool written = ServerWrite(serverObject, initialState, out ArraySegment<byte> data, out int writeLength);
-            Assert.IsTrue(written, "did not write");
-
             // remove identity from client, as if it walked out of range
             NetworkClient.spawned.Remove(clientValue.netId);
 
-            // read client data, this should be cached in field
-            ClientRead(clientObject, initialState, data, writeLength);
+            ProcessMessages();
 
             // check field shows as null
             Assert.That(clientObject.value, Is.EqualTo(null), "field should return null");
@@ -389,10 +348,14 @@ namespace Mirror.Tests.SyncVarAttributeTests
             Assert.That(clientObject.value, Is.EqualTo(clientValue), "fields should return clientValue");
         }
 
+        // this test is also important if we do LocalWorldState later:
+        // - if LocalWorldMessage spawns netId=N
+        // - and we remove N from NetworkClient.spawned
+        // - and the next LocalWorldMessage contains updated payload for N
+        // =>  client should NOT assume it's a spawned payload just because the
+        //     netId isn't in spawned anymore.
         [Test]
-        [TestCase(true)]
-        [TestCase(false)]
-        public void SyncVarCacheNetidForBehaviour(bool initialState)
+        public void SyncVarCacheNetidForBehaviour()
         {
             CreateNetworkedAndSpawn(
                 out _, out _, out SyncVarNetworkBehaviour serverObject,
@@ -409,15 +372,10 @@ namespace Mirror.Tests.SyncVarAttributeTests
             serverObject.value = serverValue;
             clientObject.value = null;
 
-            // write server data
-            bool written = ServerWrite(serverObject, initialState, out ArraySegment<byte> data, out int writeLength);
-            Assert.IsTrue(written, "did not write");
-
             // remove identity from client, as if it walked out of range
             NetworkClient.spawned.Remove(clientIdentity.netId);
 
-            // read client data, this should be cached in field
-            ClientRead(clientObject, initialState, data, writeLength);
+            ProcessMessages();
 
             // check field shows as null
             Assert.That(clientObject.value, Is.EqualTo(null), "field should return null");
@@ -449,14 +407,14 @@ namespace Mirror.Tests.SyncVarAttributeTests
             NetworkWriter ownerWriter = new NetworkWriter();
             // not really used in this Test
             NetworkWriter observersWriter = new NetworkWriter();
-            serverIdentity.OnSerializeAllSafely(true, ownerWriter, observersWriter);
+            serverIdentity.SerializeServer(true, ownerWriter, observersWriter);
 
             // set up a "client" object
             CreateNetworked(out _, out NetworkIdentity clientIdentity, out SyncVarAbstractNetworkBehaviour clientBehaviour);
 
             // apply all the data from the server object
             NetworkReader reader = new NetworkReader(ownerWriter.ToArray());
-            clientIdentity.OnDeserializeAllSafely(reader, true);
+            clientIdentity.DeserializeClient(reader, true);
 
             // check that the syncvars got updated
             Assert.That(clientBehaviour.monster1, Is.EqualTo(serverBehaviour.monster1), "Data should be synchronized");
