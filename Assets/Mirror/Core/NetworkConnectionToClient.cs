@@ -14,15 +14,15 @@ namespace Mirror
         readonly NetworkWriter reliableRpcs = new NetworkWriter();
         readonly NetworkWriter unreliableRpcs = new NetworkWriter();
 
-        public override string address =>
-            Transport.active.ServerGetClientAddress(connectionId);
+        public virtual string address => Transport.active.ServerGetClientAddress(connectionId);
 
         /// <summary>NetworkIdentities that this connection can see</summary>
         // TODO move to server's NetworkConnectionToClient?
-        public new readonly HashSet<NetworkIdentity> observing = new HashSet<NetworkIdentity>();
+        public readonly HashSet<NetworkIdentity> observing = new HashSet<NetworkIdentity>();
 
-        [Obsolete(".clientOwnedObjects was renamed to .owned :)")] // 2022-10-13
-        public new HashSet<NetworkIdentity> clientOwnedObjects => owned;
+        // Deprecated 2022-10-13
+        [Obsolete(".clientOwnedObjects was renamed to .owned :)")]
+        public HashSet<NetworkIdentity> clientOwnedObjects => owned;
 
         // unbatcher
         public Unbatcher unbatcher = new Unbatcher();

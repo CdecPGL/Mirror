@@ -64,13 +64,11 @@ namespace Mirror
             if (size == 0)
                 return null;
 
-            int realSize = size - 1;
+            ushort realSize = (ushort)(size - 1);
 
             // make sure it's within limits to avoid allocation attacks etc.
-            if (realSize >= NetworkWriter.MaxStringLength)
-            {
-                throw new EndOfStreamException($"ReadString too long: {realSize}. Limit is: {NetworkWriter.MaxStringLength}");
-            }
+            if (realSize > NetworkWriter.MaxStringLength)
+                throw new EndOfStreamException($"NetworkReader.ReadString - Value too long: {realSize} bytes. Limit is: {NetworkWriter.MaxStringLength} bytes");
 
             ArraySegment<byte> data = reader.ReadBytesSegment(realSize);
 
@@ -236,6 +234,10 @@ namespace Mirror
             return networkIdentity != null ? networkIdentity.gameObject : null;
         }
 
+        // while SyncList<T> is recommended for NetworkBehaviours,
+        // structs may have .List<T> members which weaver needs to be able to
+        // fully serialize for NetworkMessages etc.
+        // note that Weaver/Readers/GenerateReader() handles this manually.
         public static List<T> ReadList<T>(this NetworkReader reader)
         {
             int length = reader.ReadInt();
@@ -248,6 +250,26 @@ namespace Mirror
             }
             return result;
         }
+
+        // while SyncSet<T> is recommended for NetworkBehaviours,
+        // structs may have .Set<T> members which weaver needs to be able to
+        // fully serialize for NetworkMessages etc.
+        // note that Weaver/Readers/GenerateReader() handles this manually.
+        // TODO writer not found. need to adjust weaver first. see tests.
+        /*
+        public static HashSet<T> ReadHashSet<T>(this NetworkReader reader)
+        {
+            int length = reader.ReadInt();
+            if (length < 0)
+                return null;
+            HashSet<T> result = new HashSet<T>();
+            for (int i = 0; i < length; i++)
+            {
+                result.Add(reader.Read<T>());
+            }
+            return result;
+        }
+        */
 
         public static T[] ReadArray<T>(this NetworkReader reader)
         {
@@ -312,5 +334,12 @@ namespace Mirror
             // otherwise create a valid sprite
             return Sprite.Create(texture, reader.ReadRect(), reader.ReadVector2());
         }
+
+        public static DateTime ReadDateTime(this NetworkReader reader)
+        {
+            return DateTime.FromOADate(reader.ReadDouble());
+        }
+
+        public static DateTime? ReadDateTimeNullable(this NetworkReader reader) => reader.ReadBool() ? ReadDateTime(reader) : default(DateTime?);
     }
 }

@@ -1317,6 +1317,29 @@ namespace Mirror.Tests
             Assert.That(readList, Is.Null);
         }
 
+        [Test, Ignore("TODO")]
+        public void TestHashSet()
+        {
+            HashSet<int> original = new HashSet<int>() { 1, 2, 3, 4, 5 };
+            NetworkWriter writer = new NetworkWriter();
+            writer.Write(original);
+
+            NetworkReader reader = new NetworkReader(writer.ToArray());
+            HashSet<int> readHashSet = reader.Read<HashSet<int>>();
+            Assert.That(readHashSet, Is.EqualTo(original));
+        }
+
+        [Test, Ignore("TODO")]
+        public void TestNullHashSet()
+        {
+            NetworkWriter writer = new NetworkWriter();
+            writer.Write<HashSet<int>>(null);
+
+            NetworkReader reader = new NetworkReader(writer.ToArray());
+            HashSet<int> readHashSet = reader.Read<HashSet<int>>();
+            Assert.That(readHashSet, Is.Null);
+        }
+
 
         const int testArraySize = 4;
         [Test]
@@ -1420,6 +1443,25 @@ namespace Mirror.Tests
             byte[] bytes = writer.ToArray();
 
             Assert.That(bytes.Length, Is.EqualTo(4), "null Networkbehaviour should be 4 bytes long.");
+
+            NetworkReader reader = new NetworkReader(bytes);
+            RpcNetworkIdentityBehaviour actual = reader.ReadNetworkBehaviour<RpcNetworkIdentityBehaviour>();
+            Assert.That(actual, Is.Null, "should read null");
+
+            Assert.That(reader.Position, Is.EqualTo(4), "should read 4 bytes when netid is 0");
+        }
+
+        // test for https://github.com/MirrorNetworking/Mirror/issues/3399
+        [Test]
+        public void TestNetworkBehaviourNotSpawned()
+        {
+            CreateNetworked(out _, out _, out RpcNetworkIdentityBehaviour component);
+            NetworkWriter writer = new NetworkWriter();
+            writer.WriteNetworkBehaviour(component);
+
+            byte[] bytes = writer.ToArray();
+
+            Assert.That(bytes.Length, Is.EqualTo(4), "unspawned Networkbehaviour should be 4 bytes long.");
 
             NetworkReader reader = new NetworkReader(bytes);
             RpcNetworkIdentityBehaviour actual = reader.ReadNetworkBehaviour<RpcNetworkIdentityBehaviour>();
