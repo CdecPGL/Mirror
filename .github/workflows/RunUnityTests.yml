@@ -12,13 +12,14 @@ jobs:
       matrix:
         unityVersion:
           - 2019.4.40f1
-          - 2020.3.45f1
-          - 2021.3.19f1
-          - 2022.2.8f1
+          - 2020.3.48f1
+          - 2021.3.33f1
+          - 2022.3.15f1
+          - 2023.2.3f1
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # Do Not Enable Caching --- Library needs to be recompiled every time because Weaver
       # Leaving this here for posterity to ensure we never turn this on.
@@ -30,7 +31,7 @@ jobs:
       #    key: Library-${{ matrix.unityVersion }}
 
       - name: Run editor Tests
-        uses: game-ci/unity-test-runner@main
+        uses: game-ci/unity-test-runner@v4.0.0
 
         # We can use the same license for all Unity versions
         env:
