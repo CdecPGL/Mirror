@@ -17,12 +17,13 @@ namespace Mirror.Tests.NetworkServers
     {
         // weaver serializes byte[] wit WriteBytesAndSize
         public byte[] payload;
-        // so payload := size - 4
+        // so payload := size - header
+        //   where header is VarUInt compression(size)
         // then the message is exactly maxed size.
         //
         // NOTE: we have a LargerMaxMessageSize test which guarantees that
         //       variablesized + 1 is exactly transport.max + 1
-        public VariableSizedMessage(int size) => payload = new byte[size - 4];
+        public VariableSizedMessage(int size) => payload = new byte[size - Compression.VarUIntSize((uint)size)];
     }
 
     public class CommandTestNetworkBehaviour : NetworkBehaviour
@@ -34,13 +35,27 @@ namespace Mirror.Tests.NetworkServers
         public void TestCommand() => ++called;
     }
 
+    public class CommandWithConnectionToClientNetworkBehaviour : NetworkBehaviour
+    {
+        // counter to make sure that it's called exactly once
+        public int called;
+        public NetworkConnectionToClient conn;
+
+        [Command]
+        public void TestCommand(NetworkConnectionToClient conn = null)
+        {
+            this.conn = conn;
+            ++called;
+        }
+    }
+
     public class RpcTestNetworkBehaviour : NetworkBehaviour
     {
         // counter to make sure that it's called exactly once
         public int called;
         // weaver generates this from [Rpc]
         // but for tests we need to add it manually
-        public static void RpcGenerated(NetworkBehaviour comp, NetworkReader reader, NetworkConnection senderConnection)
+        public static void RpcGenerated(NetworkBehaviour comp, NetworkReader reader, NetworkConnectionToClient senderConnection)
         {
             ++((RpcTestNetworkBehaviour)comp).called;
         }
@@ -67,11 +82,13 @@ namespace Mirror.Tests.NetworkServers
             Assert.That(NetworkServer.connections.Count, Is.EqualTo(0));
 
             // connect first: should work
-            transport.OnServerConnected.Invoke(42);
+            transport.OnServerConnectedWithAddress.Invoke(42, "");
             Assert.That(NetworkServer.connections.Count, Is.EqualTo(1));
 
             // connect second: should fail
-            transport.OnServerConnected.Invoke(43);
+            LogAssert.ignoreFailingMessages = true;
+            transport.OnServerConnectedWithAddress.Invoke(43, "");
+            LogAssert.ignoreFailingMessages = false;
             Assert.That(NetworkServer.connections.Count, Is.EqualTo(1));
         }
 
@@ -84,7 +101,7 @@ namespace Mirror.Tests.NetworkServers
 
             // listen & connect
             NetworkServer.Listen(1);
-            transport.OnServerConnected.Invoke(42);
+            transport.OnServerConnectedWithAddress.Invoke(42, "");
             Assert.That(connectCalled, Is.True);
         }
 
@@ -97,7 +114,7 @@ namespace Mirror.Tests.NetworkServers
 
             // listen & connect
             NetworkServer.Listen(1);
-            transport.OnServerConnected.Invoke(42);
+            transport.OnServerConnectedWithAddress.Invoke(42, "");
 
             // disconnect
             transport.OnServerDisconnected.Invoke(42);
@@ -112,12 +129,12 @@ namespace Mirror.Tests.NetworkServers
             Assert.That(NetworkServer.connections.Count, Is.EqualTo(0));
 
             // connect first
-            transport.OnServerConnected.Invoke(42);
+            transport.OnServerConnectedWithAddress.Invoke(42, "");
             Assert.That(NetworkServer.connections.Count, Is.EqualTo(1));
             Assert.That(NetworkServer.connections.ContainsKey(42), Is.True);
 
             // connect second
-            transport.OnServerConnected.Invoke(43);
+            transport.OnServerConnectedWithAddress.Invoke(43, "");
             Assert.That(NetworkServer.connections.Count, Is.EqualTo(2));
             Assert.That(NetworkServer.connections.ContainsKey(43), Is.True);
 
@@ -144,7 +161,7 @@ namespace Mirror.Tests.NetworkServers
             // connect with connectionId == 0 should fail
             // (it will show an error message, which is expected)
             LogAssert.ignoreFailingMessages = true;
-            transport.OnServerConnected.Invoke(0);
+            transport.OnServerConnectedWithAddress.Invoke(0, "");
             Assert.That(NetworkServer.connections.Count, Is.EqualTo(0));
             LogAssert.ignoreFailingMessages = false;
         }
@@ -156,12 +173,14 @@ namespace Mirror.Tests.NetworkServers
             NetworkServer.Listen(2);
 
             // connect first
-            transport.OnServerConnected.Invoke(42);
+            transport.OnServerConnectedWithAddress.Invoke(42, "");
             Assert.That(NetworkServer.connections.Count, Is.EqualTo(1));
             NetworkConnectionToClient original = NetworkServer.connections[42];
 
             // connect duplicate - shouldn't overwrite first one
-            transport.OnServerConnected.Invoke(42);
+            LogAssert.ignoreFailingMessages = true;
+            transport.OnServerConnectedWithAddress.Invoke(42, "");
+            LogAssert.ignoreFailingMessages = false;
             Assert.That(NetworkServer.connections.Count, Is.EqualTo(1));
             Assert.That(NetworkServer.connections[42], Is.EqualTo(original));
         }
@@ -632,6 +651,7 @@ namespace Mirror.Tests.NetworkServers
 
             // send a message without a registered handler
             NetworkClient.Send(new TestMessage1());
+            LogAssert.Expect(LogType.Error, $"NetworkServer: failed to unpack and invoke message. Disconnecting 1.");
             ProcessMessages();
 
             // should have been disconnected
@@ -684,6 +704,7 @@ namespace Mirror.Tests.NetworkServers
 
             // send a message without a registered handler
             connectionToClient.Send(new TestMessage1());
+            LogAssert.Expect(LogType.Error, $"NetworkClient: failed to unpack and invoke message. Disconnecting.");
             ProcessMessages();
 
             // should have been disconnected
@@ -793,20 +814,22 @@ namespace Mirror.Tests.NetworkServers
         {
             // listen & connect
             NetworkServer.Listen(1);
-            ConnectHostClientBlockingAuthenticatedAndReady();
+            ConnectClientBlockingAuthenticatedAndReady(out _);
 
             // add an identity with two networkbehaviour components
             // spawned, otherwise command handler won't find it in .spawned.
             // WITH OWNER = WITH AUTHORITY
-            CreateNetworkedAndSpawn(out GameObject _, out NetworkIdentity identity, out CommandTestNetworkBehaviour comp, NetworkServer.localConnection);
+            CreateNetworkedAndSpawn(out _, out NetworkIdentity serverIdentity, out CommandTestNetworkBehaviour serverComponent,
+                                    out _, out NetworkIdentity clientIdentity, out CommandTestNetworkBehaviour clientComponent,
+                                    NetworkServer.localConnection);
 
             // change identity's owner connection so we can't call [Commands] on it
-            identity.connectionToClient = new LocalConnectionToClient();
+            serverIdentity.connectionToClient = new LocalConnectionToClient();
 
             // call the command
-            comp.TestCommand();
+            clientComponent.TestCommand();
             ProcessMessages();
-            Assert.That(comp.called, Is.EqualTo(0));
+            Assert.That(serverComponent.called, Is.EqualTo(0));
         }
 
         [Test]
@@ -819,13 +842,61 @@ namespace Mirror.Tests.NetworkServers
             // add an identity with two networkbehaviour components
             // spawned, otherwise command handler won't find it in .spawned.
             // WITHOUT OWNER = WITHOUT AUTHORITY for this test
-            CreateNetworkedAndSpawn(out _, out _, out CommandTestNetworkBehaviour comp,
-                                    out _, out _, out _);
+            CreateNetworkedAndSpawn(out _, out _, out CommandTestNetworkBehaviour serverComponent,
+                                    out _, out _, out CommandTestNetworkBehaviour clientComponent);
 
             // call the command
+            clientComponent.TestCommand();
+            ProcessMessages();
+            Assert.That(serverComponent.called, Is.EqualTo(0));
+        }
+
+        // Command with NetworkConnectionToClient arg expects a non-null connection arg when called on the client owned object.
+        [Test]
+        public void SendCommand_ClientOwnedObject_ConnectionNotNull()
+        {
+            // listen & connect
+            NetworkServer.Listen(1);
+            ConnectHostClientBlockingAuthenticatedAndReady();
+
+            // add an identity with two networkbehaviour components
+            // spawned, otherwise command handler won't find it in .spawned.
+            // WITH OWNER = WITH AUTHORITY
+            CreateNetworkedAndSpawn(out GameObject _, out NetworkIdentity _, out CommandWithConnectionToClientNetworkBehaviour comp, NetworkServer.localConnection);
+
+            // call the command, which has a 'NetworkConnectionToClient = null' default parameter
             comp.TestCommand();
             ProcessMessages();
-            Assert.That(comp.called, Is.EqualTo(0));
+
+            // on server it should be != null
+            Assert.That(comp.conn, !Is.Null);
+            // Host player-owned object: sender == connectionToClient (host's localConnection).
+            Assert.That(comp.conn, Is.EqualTo(comp.connectionToClient));
+            Assert.That(comp.called, Is.EqualTo(1));
+        }
+
+        // Command with NetworkConnectionToClient arg expects a non-null connection arg when called on the server owned object.
+        [Test]
+        public void SendCommand_ServerOwnedObject_ConnectionNotNull()
+        {
+            // listen & connect
+            NetworkServer.Listen(1);
+            ConnectHostClientBlockingAuthenticatedAndReady();
+
+            // add an identity with two networkbehaviour components
+            // spawned, otherwise command handler won't find it in .spawned.
+            // WITHOUT OWNER (SERVER-OWNED OBJECT)
+            CreateNetworkedAndSpawn(out GameObject _, out NetworkIdentity _, out CommandWithConnectionToClientNetworkBehaviour comp, ownerConnection: null);
+
+            // call the command, which has a 'NetworkConnectionToClient = null' default parameter
+            comp.TestCommand();
+            ProcessMessages();
+
+            // on server it should be != null
+            Assert.That(comp.conn, !Is.Null);
+            // Host mode + server-owned object: connectionToClient is null, so sender must be localConnection.
+            Assert.That(comp.conn, Is.EqualTo(NetworkServer.localConnection));
+            Assert.That(comp.called, Is.EqualTo(1));
         }
 
         [Test]
@@ -866,6 +937,7 @@ namespace Mirror.Tests.NetworkServers
             // unregister, send again, should not be called again
             NetworkServer.UnregisterHandler<TestMessage1>();
             NetworkClient.Send(new TestMessage1());
+            LogAssert.Expect(LogType.Error, $"NetworkServer: failed to unpack and invoke message. Disconnecting 1.");
             ProcessMessages();
             Assert.That(variant1Called, Is.EqualTo(1));
         }
@@ -889,6 +961,7 @@ namespace Mirror.Tests.NetworkServers
             // clear handlers, send again, should not be called again
             NetworkServer.ClearHandlers();
             NetworkClient.Send(new TestMessage1());
+            LogAssert.Expect(LogType.Error, $"NetworkServer: failed to unpack and invoke message. Disconnecting 1.");
             ProcessMessages();
             Assert.That(variant1Called, Is.EqualTo(1));
         }
@@ -1098,6 +1171,22 @@ namespace Mirror.Tests.NetworkServers
             Assert.That(comp.onStopAuthorityCalled, Is.EqualTo(1));
         }
 
+        // test to prevent https://github.com/MirrorNetworking/Mirror/issues/2536
+        [Test]
+        public void SetListenToFalse()
+        {
+            // start the server with listen=true
+            NetworkServer.Listen(1);
+
+            // set listen=false at runtime
+            NetworkServer.listen = false;
+
+            // try connecting a client. should be reject while not listening.
+            NetworkClient.Connect("127.0.0.1");
+            UpdateTransport();
+            Assert.That(NetworkServer.connections.Count, Is.EqualTo(0));
+        }
+
         // test to reproduce a bug where stopping the server would not call
         // OnStopServer on scene objects:
         // https://github.com/vis2k/Mirror/issues/2119
@@ -1143,14 +1232,18 @@ namespace Mirror.Tests.NetworkServers
             NetworkServer.Shutdown();
 
             // state cleared?
-            Assert.That(NetworkServer.dontListen, Is.False);
+            Assert.That(NetworkServer.listen, Is.True);
             Assert.That(NetworkServer.active, Is.False);
             Assert.That(NetworkServer.isLoadingScene, Is.False);
+
+            Assert.That(NetworkServer.exceptionsDisconnect, Is.True);
 
             Assert.That(NetworkServer.connections.Count, Is.EqualTo(0));
             Assert.That(NetworkServer.connectionsCopy.Count, Is.EqualTo(0));
             Assert.That(NetworkServer.handlers.Count, Is.EqualTo(0));
             Assert.That(NetworkServer.spawned.Count, Is.EqualTo(0));
+
+            Assert.That(NetworkServer.actualTickRate, Is.EqualTo(0));
 
             Assert.That(NetworkServer.localConnection, Is.Null);
             Assert.That(NetworkServer.activeHost, Is.False);
@@ -1158,6 +1251,7 @@ namespace Mirror.Tests.NetworkServers
             Assert.That(NetworkServer.OnConnectedEvent, Is.Null);
             Assert.That(NetworkServer.OnDisconnectedEvent, Is.Null);
             Assert.That(NetworkServer.OnErrorEvent, Is.Null);
+            Assert.That(NetworkServer.OnTransportExceptionEvent, Is.Null);
         }
 
         [Test]
@@ -1301,7 +1395,7 @@ namespace Mirror.Tests.NetworkServers
                 connectionToClient);
 
             // set it to not be owned by this connection anymore
-            NetworkServer.RemovePlayerForConnection(connectionToClient, false);
+            NetworkServer.RemovePlayerForConnection(connectionToClient, RemovePlayerOptions.KeepActive);
             ProcessMessages();
 
             // should call OnStopLocalPlayer on client
@@ -1332,7 +1426,7 @@ namespace Mirror.Tests.NetworkServers
             clientNextIdentity.name = nameof(clientNextIdentity);
 
             // replace connection's player from 'previous' to 'next'
-            NetworkServer.ReplacePlayerForConnection(connectionToClient, serverNextIdentity.gameObject);
+            NetworkServer.ReplacePlayerForConnection(connectionToClient, serverNextIdentity.gameObject, ReplacePlayerOptions.KeepActive);
             ProcessMessages();
 
             // should call OnStartLocalPlayer on 'next' since it became the new local player.
@@ -1362,7 +1456,7 @@ namespace Mirror.Tests.NetworkServers
             clientNextIdentity.name = nameof(clientNextIdentity);
 
             // replace connection's player from 'previous' to 'next'
-            NetworkServer.ReplacePlayerForConnection(connectionToClient, serverNextIdentity.gameObject);
+            NetworkServer.ReplacePlayerForConnection(connectionToClient, serverNextIdentity.gameObject, ReplacePlayerOptions.KeepActive);
             ProcessMessages();
 
             // should call OnStopLocalPlayer on 'previous' since it's not owned anymore now.
