@@ -8,6 +8,9 @@ namespace Mirror.SimpleWeb
 {
     [DisallowMultipleComponent]
     [HelpURL("https://mirror-networking.gitbook.io/docs/manual/transports/websockets-transport")]
+#if !UNITY_2022_3_OR_NEWER
+    [Obsolete("SimpleWebTransport is not supported for this version of Unity.\nPlease upgrade to Unity 2022.3 LTS or newer for WebGL projects.", true)]
+#endif
     public class SimpleWebTransport : Transport, PortTransport
     {
         public const string NormalScheme = "ws";
@@ -27,6 +30,9 @@ namespace Mirror.SimpleWeb
         [FormerlySerializedAs("clientMaxMessagesPerTick")]
         [Tooltip("Caps the number of messages the client will process per tick. Allows LateUpdate to finish to let the reset of unity continue in case more messages arrive before they are processed")]
         public int clientMaxMsgsPerTick = 1000;
+
+        [Tooltip("Maximum number of messages that can be in the send queue before the connection is closed. This prevents slow connections from using too much memory on the server.")]
+        public int maxSendQueueSize = 1000;
 
         [Tooltip("Send would stall forever if the network is cut off during a send, so we need a timeout (in milliseconds)")]
         public int sendTimeout = 5000;
@@ -290,7 +296,7 @@ namespace Mirror.SimpleWeb
                 Log.Warn("[SWT-ServerStart]: Server Already Started");
 
             SslConfig config = SslConfigLoader.Load(sslEnabled, sslCertJson, sslProtocols);
-            server = new SimpleWebServer(serverMaxMsgsPerTick, TcpConfig, maxMessageSize, maxHandshakeSize, config);
+            server = new SimpleWebServer(serverMaxMsgsPerTick, TcpConfig, maxMessageSize, maxHandshakeSize, config, maxSendQueueSize);
 
             server.onConnect += OnServerConnectedWithAddress.Invoke;
             server.onDisconnect += OnServerDisconnected.Invoke;

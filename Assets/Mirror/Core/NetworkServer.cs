@@ -152,11 +152,12 @@ namespace Mirror
         public static void Listen(int maxConns)
         {
             Initialize();
-            maxConnections = maxConns;
 
             // only start server if we want to listen
-            if (listen)
+            if (listen && !Utils.IsWebGL)
             {
+                maxConnections = maxConns;
+
                 Transport.active.ServerStart();
 
                 if (Transport.active is PortTransport portTransport)
@@ -175,6 +176,8 @@ namespace Mirror
                 else
                     Debug.Log("Server started listening");
             }
+            else
+                maxConnections = 0;
 
             active = true;
             RegisterMessageHandlers();
@@ -508,13 +511,6 @@ namespace Mirror
         // for client's owned ClientToServer components.
         static void OnEntityStateMessageUnreliableDelta(NetworkConnectionToClient connection, EntityStateMessageUnreliableDelta message, int channelId)
         {
-            // safety check: baseline should always arrive over Reliable channel.
-            if (channelId != Channels.Unreliable)
-            {
-                Debug.LogError($"Server OnEntityStateMessageUnreliableDelta arrived on channel {channelId} instead of Unreliable. This should never happen!");
-                return;
-            }
-
             // need to validate permissions carefully.
             // an attacker may attempt to modify a not-owned or not-ClientToServer component.
 
@@ -947,53 +943,68 @@ namespace Mirror
                 //       would only be processed when OnTransportData is called
                 //       the next time.
                 //       => consider moving processing to NetworkEarlyUpdate.
-                while (!isLoadingScene &&
-                       connection.unbatcher.GetNextMessage(out ArraySegment<byte> message, out double remoteTimestamp))
+                //
+                // GetNextMessage may throw for malformed batches
+                // (invalid varint, message size > remaining bytes).
+                // catch and disconnect to prevent queue growth attacks.
+                try
                 {
-                    using (NetworkReaderPooled reader = NetworkReaderPool.Get(message))
+                    while (!isLoadingScene &&
+                           connection.unbatcher.GetNextMessage(out ArraySegment<byte> message, out double remoteTimestamp))
                     {
-                        // enough to read at least header size?
-                        if (reader.Remaining >= NetworkMessages.IdSize)
+                        using (NetworkReaderPooled reader = NetworkReaderPool.Get(message))
                         {
-                            // make remoteTimeStamp available to the user
-                            connection.remoteTimeStamp = remoteTimestamp;
-
-                            // handle message
-                            if (!UnpackAndInvoke(connection, reader, channelId))
+                            // enough to read at least header size?
+                            if (reader.Remaining >= NetworkMessages.IdSize)
                             {
-                                // warn, disconnect and return if failed
-                                // -> warning because attackers might send random data
-                                // -> messages in a batch aren't length prefixed.
-                                //    failing to read one would cause undefined
-                                //    behaviour for every message afterwards.
-                                //    so we need to disconnect.
-                                // -> return to avoid the below unbatches.count error.
-                                //    we already disconnected and handled it.
+                                // make remoteTimeStamp available to the user
+                                connection.remoteTimeStamp = remoteTimestamp;
+
+                                // handle message
+                                if (!UnpackAndInvoke(connection, reader, channelId))
+                                {
+                                    // warn, disconnect and return if failed
+                                    // -> warning because attackers might send random data
+                                    // -> messages in a batch aren't length prefixed.
+                                    //    failing to read one would cause undefined
+                                    //    behaviour for every message afterwards.
+                                    //    so we need to disconnect.
+                                    // -> return to avoid the below unbatches.count error.
+                                    //    we already disconnected and handled it.
+                                    if (exceptionsDisconnect)
+                                    {
+                                        Debug.LogError($"NetworkServer: failed to unpack and invoke message. Disconnecting {connectionId}.");
+                                        connection.Disconnect();
+                                    }
+                                    else
+                                        Debug.LogWarning($"NetworkServer: failed to unpack and invoke message from connectionId:{connectionId}.");
+
+                                    return;
+                                }
+                            }
+                            // otherwise disconnect
+                            else
+                            {
                                 if (exceptionsDisconnect)
                                 {
-                                    Debug.LogError($"NetworkServer: failed to unpack and invoke message. Disconnecting {connectionId}.");
+                                    Debug.LogError($"NetworkServer: received message from connectionId:{connectionId} was too short (messages should start with message id). Disconnecting.");
                                     connection.Disconnect();
                                 }
                                 else
-                                    Debug.LogWarning($"NetworkServer: failed to unpack and invoke message from connectionId:{connectionId}.");
+                                    Debug.LogWarning($"NetworkServer: received message from connectionId:{connectionId} was too short (messages should start with message id).");
 
                                 return;
                             }
                         }
-                        // otherwise disconnect
-                        else
-                        {
-                            if (exceptionsDisconnect)
-                            {
-                                Debug.LogError($"NetworkServer: received message from connectionId:{connectionId} was too short (messages should start with message id). Disconnecting.");
-                                connection.Disconnect();
-                            }
-                            else
-                                Debug.LogWarning($"NetworkServer: received message from connectionId:{connectionId} was too short (messages should start with message id).");
-
-                            return;
-                        }
                     }
+                }
+                catch (Exception e)
+                {
+                    // malformed batch: invalid varint, message size > remaining, etc.
+                    // unbatcher already cleared batches when it detected the error.
+                    Debug.LogError($"NetworkServer: failed to parse batch from connectionId:{connectionId}: {e.Message}. Disconnecting.");
+                    connection.Disconnect();
+                    return;
                 }
 
                 // if we weren't interrupted by a scene change,
@@ -1014,6 +1025,10 @@ namespace Mirror
                 if (!isLoadingScene && connection.unbatcher.BatchesCount > 0)
                 {
                     Debug.LogError($"Still had {connection.unbatcher.BatchesCount} batches remaining after processing, even though processing was not interrupted by a scene change. This should never happen, as it would cause ever growing batches.\nPossible reasons:\n* A message didn't deserialize as much as it serialized\n*There was no message handler for a message id, so the reader wasn't read until the end.");
+
+                    // disconnect and clear to prevent memory leak / queue growth
+                    connection.unbatcher.Clear();
+                    connection.Disconnect();
                 }
             }
             else Debug.LogError($"HandleData Unknown connectionId:{connectionId}");
